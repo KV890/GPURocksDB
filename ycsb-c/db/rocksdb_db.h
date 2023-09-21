@@ -13,7 +13,7 @@ class RocksDB : public DB {
  public:
   explicit RocksDB(const char *dbfilename);
 
-  RocksDB(const char *dbfilename, int num_column_family);
+  RocksDB(const char *dbfilename, int num_column_family, int max_background_jobs);
 
   int Read(const std::string &table, const std::string &key,
            const std::vector<std::string> *fields, std::vector<KVPair> &result,
@@ -46,7 +46,7 @@ class RocksDB : public DB {
   std::shared_ptr<rocksdb::Statistics> db_stats_;
   size_t not_found_;
 
-  void SetOptions(rocksdb::Options *options);
+  void SetOptions(rocksdb::Options *options, int max_background_jobs);
 };
 
 }  // namespace ycsbc

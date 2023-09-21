@@ -11,7 +11,6 @@
 #include <filesystem>
 #include <future>
 #include <iostream>
-#include <map>
 #include <string>
 #include <thread>
 #include <vector>
@@ -473,6 +472,14 @@ std::string ParseCommandLine(int argc, const char *argv[],
         exit(0);
       }
       props.SetProperty("batch_size", argv[argindex]);
+      argindex++;
+    } else if (strcmp(argv[argindex], "-max_background_jobs") == 0) {
+      argindex++;
+      if (argindex >= argc) {
+        UsageMessage(argv[0]);
+        exit(0);
+      }
+      props.SetProperty("max_background_jobs", argv[argindex]);
       argindex++;
     } else {
       cout << "Unknown option '" << argv[argindex] << "'" << endl;

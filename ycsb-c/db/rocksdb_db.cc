@@ -10,7 +10,6 @@ RocksDB::RocksDB(const char *dbfilename)
     : cache_(nullptr), db_stats_(nullptr), not_found_(0) {
   // set option
   rocksdb::Options options;
-  SetOptions(&options);
 
   rocksdb::Status s = rocksdb::DB::Open(options, dbfilename, &db_with_cf.db);
 
@@ -21,10 +20,11 @@ RocksDB::RocksDB(const char *dbfilename)
   }
 }
 
-RocksDB::RocksDB(const char *dbfilename, int num_column_family)
+RocksDB::RocksDB(const char *dbfilename, int num_column_family,
+                 int max_background_jobs)
     : cache_(nullptr), db_stats_(nullptr), not_found_(0) {
   rocksdb::Options options;
-  SetOptions(&options);
+  SetOptions(&options, max_background_jobs);
 
   std::vector<rocksdb::ColumnFamilyDescriptor> column_families;
 
@@ -47,7 +47,7 @@ RocksDB::RocksDB(const char *dbfilename, int num_column_family)
   db_with_cf.num_hot = num_column_family;
 }
 
-void RocksDB::SetOptions(rocksdb::Options *options) {
+void RocksDB::SetOptions(rocksdb::Options *options, int max_background_jobs) {
   options->create_if_missing = true;
   options->create_missing_column_families = true;
   options->compression = rocksdb::CompressionType::kNoCompression;
@@ -58,7 +58,7 @@ void RocksDB::SetOptions(rocksdb::Options *options) {
   options->write_buffer_size = 64 << 20;
   options->level0_file_num_compaction_trigger = 4;
   options->max_bytes_for_level_base = 512 * 1024 * 1024;
-  options->max_background_jobs = 8;
+  options->max_background_jobs = max_background_jobs;
 
   options->rate_limiter.reset(
       rocksdb::NewGenericRateLimiter(512 * 1024 * 1024));
