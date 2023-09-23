@@ -68,9 +68,7 @@ void EncodePrepare(size_t total_num_kv, std::vector<SSTableInfo>& info,
 
   size_t max_num_kv = max_num_data_block * num_kv_data_block;
 
-  info.emplace_back(max_num_data_block, 0, num_restarts, max_num_kv);
-
-  /*if (total_num_kv <= max_num_kv) {
+  if (total_num_kv <= max_num_kv) {
     size_t num_data_block = total_num_kv / num_kv_data_block;
     size_t num_kv_last_data_block = total_num_kv % num_kv_data_block;
     if (num_kv_last_data_block > 0) {
@@ -96,7 +94,7 @@ void EncodePrepare(size_t total_num_kv, std::vector<SSTableInfo>& info,
     num_restarts = num_kv_last_data_block / BlockRestartInterval + 1;
     info.emplace_back(num_data_block, num_kv_last_data_block, num_restarts,
                       remaining_num_kv);
-  }*/
+  }
 }
 
 char* EncodeSSTable(const std::vector<GPUKeyValue>& keyValues,
