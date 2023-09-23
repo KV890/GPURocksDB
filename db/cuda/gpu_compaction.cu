@@ -11,27 +11,27 @@ GPUKeyValue* DecodeAndSort(const InputFile* inputFiles, size_t num_inputs,
   //  float elapsed_time;
 
   // 记录整个解析SSTable的时间
-//  auto start_time = std::chrono::high_resolution_clock::now();
+  //  auto start_time = std::chrono::high_resolution_clock::now();
   GPUKeyValue* result_d = GetAndSort(inputFiles, num_inputs, inputFiles_d,
                                      num_kv_data_block, sorted_size);
 
   cudaHostAlloc((void**)result_h, sorted_size * sizeof(GPUKeyValue),
                 cudaHostAllocDefault);
-//  *result_h = new GPUKeyValue[sorted_size];
-//  cudaEventRecord(start, nullptr);
+  //  *result_h = new GPUKeyValue[sorted_size];
+  //  cudaEventRecord(start, nullptr);
   cudaMemcpy(*result_h, result_d, sorted_size * sizeof(GPUKeyValue),
-                  cudaMemcpyDeviceToHost);
+             cudaMemcpyDeviceToHost);
 
-//  cudaEventRecord(end, nullptr);
-//  cudaEventSynchronize(end);
-//  cudaEventElapsedTime(&elapsed_time, start, end);
-//  gpu_stats.transmission_time += elapsed_time;
+  //  cudaEventRecord(end, nullptr);
+  //  cudaEventSynchronize(end);
+  //  cudaEventElapsedTime(&elapsed_time, start, end);
+  //  gpu_stats.transmission_time += elapsed_time;
 
-//  auto end_time = std::chrono::high_resolution_clock::now();
-//  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-//      end_time - start_time);
-//  std::cout << "GPU decode and sort time: " << duration.count() << " us"
-//            << std::endl;
+  //  auto end_time = std::chrono::high_resolution_clock::now();
+  //  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
+  //      end_time - start_time);
+  //  std::cout << "GPU decode and sort time: " << duration.count() << " us"
+  //            << std::endl;
 
   return result_d;
 }
@@ -68,7 +68,9 @@ void EncodePrepare(size_t total_num_kv, std::vector<SSTableInfo>& info,
 
   size_t max_num_kv = max_num_data_block * num_kv_data_block;
 
-  if (total_num_kv <= max_num_kv) {
+  info.emplace_back(max_num_data_block, 0, num_restarts, max_num_kv);
+
+  /*if (total_num_kv <= max_num_kv) {
     size_t num_data_block = total_num_kv / num_kv_data_block;
     size_t num_kv_last_data_block = total_num_kv % num_kv_data_block;
     if (num_kv_last_data_block > 0) {
@@ -94,7 +96,7 @@ void EncodePrepare(size_t total_num_kv, std::vector<SSTableInfo>& info,
     num_restarts = num_kv_last_data_block / BlockRestartInterval + 1;
     info.emplace_back(num_data_block, num_kv_last_data_block, num_restarts,
                       remaining_num_kv);
-  }
+  }*/
 }
 
 char* EncodeSSTable(const std::vector<GPUKeyValue>& keyValues,

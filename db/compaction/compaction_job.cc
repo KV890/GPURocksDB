@@ -2424,10 +2424,10 @@ Status CompactionJob::GPUCompaction(CompactionJob* compaction_job,
   // 该指针会在解析SSTable中被赋值，在编码SSTable时使用，编码结束后释放该指针资源
   InputFile* input_files_d = nullptr;
 
-  mutex_for_gpu_compaction.lock();
-
+//  mutex_for_gpu_compaction.lock();
   gpu_stats.gpu_total_input_bytes += gpu_input_bytes;
   gpu_stats.gpu_compaction_count++;
+//  mutex_for_gpu_compaction.unlock();
 
   // 解码和排序
   GPUKeyValue* result_h = nullptr;
@@ -2437,11 +2437,13 @@ Status CompactionJob::GPUCompaction(CompactionJob* compaction_job,
       DecodeAndSort(input_files.data(), num_inputs, &input_files_d,
                     num_kv_data_block, &result_h, sorted_size);
 
-  mutex_for_gpu_compaction.unlock();
-
   // 编码
   // 编码准备: 划分键值对到多个SSTable
   EncodePrepare(sorted_size, infos, num_kv_data_block);
+
+  if (infos.size() == 1) {
+    printf("file number is 1\n");
+  }
 
   metas.reserve(infos.size());
   metas.resize(infos.size());
@@ -2468,15 +2470,12 @@ Status CompactionJob::GPUCompaction(CompactionJob* compaction_job,
     current_num_kv += info.total_num_kv;
   }
 
-//  delete[] result_h;
   ReleaseSource(&result_h);
 
   // GPU并行编码多SSTable
   for (size_t i = 0; i < inputs.size(); ++i) {
     OpenOutputFile(i, compact, inputs[i]);
   }
-
-  mutex_for_gpu_compaction.lock();
 
   // GPU并行编码多SSTable
   EncodeSSTables(compaction_job, compact, result_d, input_files_d, infos, metas,
@@ -2486,16 +2485,16 @@ Status CompactionJob::GPUCompaction(CompactionJob* compaction_job,
 
   compaction_stats_.SetMicros(db_options_.clock->NowMicros() - start_micros);
 
-  printf("Compaction time: %lu us\n", compaction_stats_.stats.micros);
+//  printf("Compaction time: %lu us\n", compaction_stats_.stats.micros);
 
   compaction_stats_.AddCpuMicros(compaction_stats_.stats.micros);
 
   for (const auto& info : infos) {
+//    mutex_for_gpu_compaction.lock();
     gpu_stats.gpu_total_output_bytes += info.file_size;
+//    mutex_for_gpu_compaction.unlock();
     compaction_stats_.stats.bytes_written += info.file_size;
   }
-
-  mutex_for_gpu_compaction.unlock();
 
   RecordTimeToHistogram(stats_, COMPACTION_TIME,
                         compaction_stats_.stats.micros);

@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "gpu_slice.cuh"
+#include "gpu_transform_sort.cuh"
 
 #ifndef __host__
 #define __host__

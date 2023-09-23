@@ -719,6 +719,7 @@ __device__ void BeginBuildDataBlock(
                         num_kv_data_block_d * block_idx + i]
                .key,
            non_shared);
+
     ExtractOriginalValue(
         key_values_d[file_idx * total_num_kv_front_file_d +
                      num_kv_data_block_d * block_idx + i],
@@ -994,10 +995,9 @@ void BuildIndexBlocks(char** buffer_d, char* index_keys_d,
 
     ComputeDataBlockHandleFrontFileKernel<<<grid, block, 0, stream[0]>>>(
         block_handles_d, restarts_for_index_front_file_d);
-    // 需要用到ComputeDataBlockHandleFrontFileKernel函数计算的结果，所以需要进行同步
-    CHECK(cudaDeviceSynchronize());
 
-    BuildIndexBlockFrontFileKernel<<<grid, block, 0, stream[1]>>>(
+    // 第二个核函数需要第一个核函数的结果，它们使用同一个流，所以不需要进行同步
+    BuildIndexBlockFrontFileKernel<<<grid, block, 0, stream[0]>>>(
         *buffer_d, index_keys_d, block_handles_d,
         restarts_for_index_front_file_d);
 
@@ -1009,16 +1009,13 @@ void BuildIndexBlocks(char** buffer_d, char* index_keys_d,
   dim3 block(1);
   dim3 grid(num_data_block_last_file);
 
-  ComputeDataBlockHandleLastFileKernel<<<grid, block, 0, stream[2]>>>(
+  ComputeDataBlockHandleLastFileKernel<<<grid, block, 0, stream[1]>>>(
       block_handles_d, restarts_for_index_last_file_d,
       size_incomplete_data_block, num_data_block_last_file);
-  // 同理
-  CHECK(cudaDeviceSynchronize());
 
-  BuildIndexBlockLastFileKernel<<<grid, block, 0, stream[3]>>>(
+  BuildIndexBlockLastFileKernel<<<grid, block, 0, stream[1]>>>(
       *buffer_d, index_keys_d, block_handles_d, restarts_for_index_last_file_d,
       num_data_block_last_file);
-
   //  ComputeChecksumLastFileKernel<<<1, 1, 0, stream[3]>>>(
   //      *buffer_d, num_data_block_last_file, index_size_last_file);
 }
@@ -1273,11 +1270,15 @@ void BuildSSTables(
                    size_incomplete_data_block, restarts_for_index_front_file_d,
                    restarts_for_index_last_file_d, stream);
 
+  CHECK(cudaDeviceSynchronize());
+
   auto end_time = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
       end_time - start_time);
 
+  //  mutex_for_gpu_compaction.lock();
   gpu_stats.gpu_all_micros += duration.count();
+  //  mutex_for_gpu_compaction.unlock();
 
   CHECK(cudaMemcpyAsync(all_files_buffer, all_files_buffer_d,
                         total_estimate_file_size, cudaMemcpyDeviceToHost,
@@ -1330,7 +1331,7 @@ void BuildSSTables(
                data_size_last_file, index_size_last_file);*/
 
   // 方法2
-  thread_pool_for_gpu.clear();
+  /*thread_pool_for_gpu.clear();
   thread_pool_for_gpu.reserve(num_outputs - 1);
 
   for (size_t i = 0; i < num_outputs - 1; ++i) {
@@ -1347,7 +1348,7 @@ void BuildSSTables(
                file_writes[num_outputs - 1], tbs[num_outputs - 1],
                &metas[num_outputs - 1], &tps[num_outputs - 1],
                &infos[num_outputs - 1], data_size_last_file,
-               index_size_last_file);
+               index_size_last_file);*/
 
   // 方法3
   /*size_t count = num_outputs % num_threads_for_gpu == 0
@@ -1381,6 +1382,35 @@ void BuildSSTables(
                tbs[num_outputs - 1], &metas[num_outputs - 1],
                &tps[num_outputs - 1], &infos[num_outputs - 1],
                data_size_last_file, index_size_last_file);*/
+
+  // 方法4
+  if (num_outputs > 1) {
+    thread_pool_for_gpu.emplace_back([&all_files_buffer, &num_outputs,
+                                      &estimate_file_size, &compaction_job,
+                                      &compact, &file_writes, &tbs, &metas,
+                                      &tps, &infos, &data_size, &index_size] {
+      for (size_t i = 0; i < num_outputs / 2; ++i) {
+        char* current_file_buffer = all_files_buffer + estimate_file_size * i;
+        WriteSSTable(current_file_buffer, compaction_job, compact,
+                     file_writes[i], tbs[i], &metas[i], &tps[i], &infos[i],
+                     data_size, index_size);
+      }
+    });
+  }
+
+  for (size_t i = num_outputs / 2; i < num_outputs - 1; ++i) {
+    char* current_file_buffer = all_files_buffer + estimate_file_size * i;
+    WriteSSTable(current_file_buffer, compaction_job, compact, file_writes[i],
+                 tbs[i], &metas[i], &tps[i], &infos[i], data_size, index_size);
+  }
+
+  char* current_file_buffer =
+      all_files_buffer + estimate_file_size * (num_outputs - 1);
+  WriteSSTable(current_file_buffer, compaction_job, compact,
+               file_writes[num_outputs - 1], tbs[num_outputs - 1],
+               &metas[num_outputs - 1], &tps[num_outputs - 1],
+               &infos[num_outputs - 1], data_size_last_file,
+               index_size_last_file);
 
   // 释放资源
   cudaFree(all_files_buffer_d);
