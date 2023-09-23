@@ -1385,6 +1385,8 @@ void BuildSSTables(
 
   // 方法4
   if (num_outputs > 1) {
+    thread_pool_for_gpu.clear();
+    thread_pool_for_gpu.reserve(num_outputs / 2);
     thread_pool_for_gpu.emplace_back([&all_files_buffer, &num_outputs,
                                       &estimate_file_size, &compaction_job,
                                       &compact, &file_writes, &tbs, &metas,
