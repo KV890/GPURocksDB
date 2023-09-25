@@ -486,9 +486,10 @@ char* BuildSSTable(const GPUKeyValue* keyValues, InputFile* inputFiles_d,
                    FileMetaData& meta,
                    std::shared_ptr<TableBuilderOptions>& tboptions,
                    TableProperties& tp) {
-  cudaStream_t stream[4];
-  for (auto& i : stream) {
-    cudaStreamCreate(&i);
+  cudaStream_t stream[8];
+
+  for (auto& s : stream) {
+    cudaStreamCreate(&s);
   }
 
   cudaMemcpyToSymbolAsync(num_data_block_d, &info.num_data_block,
@@ -623,10 +624,6 @@ char* BuildSSTable(const GPUKeyValue* keyValues, InputFile* inputFiles_d,
                         info.num_data_block * sizeof(GPUBlockHandle),
                         cudaMemcpyHostToDevice, stream[1]));
 
-  for (const auto& item : stream) {
-    CHECK(cudaStreamSynchronize(item));
-  }
-
   cudaEvent_t start, stop;
   cudaEventCreate(&start);
   cudaEventCreate(&stop);
@@ -685,9 +682,10 @@ char* BuildSSTable(const GPUKeyValue* keyValues, InputFile* inputFiles_d,
   cudaFree(restarts_for_index_d);
   cudaFree(last_restarts_d);
   cudaFree(blocks_buffer_d);
-  for (const auto& item : stream) {
-    cudaStreamSynchronize(item);
-    cudaStreamDestroy(item);
+
+  for (auto& s : stream) {
+    cudaStreamSynchronize(s);
+    cudaStreamDestroy(s);
   }
 
   delete[] restarts;
@@ -823,7 +821,7 @@ void BuildDataBlocks(char** buffer_d, GPUKeyValue* key_values_d,
     dim3 block(num_outputs - 1);
     dim3 grid(num_data_block_front_file);
 
-    BuildDataBlocksFrontFileKernel<<<grid, block, 0, stream[0]>>>(
+    BuildDataBlocksFrontFileKernel<<<grid, block, 0, stream[3]>>>(
         *buffer_d, key_values_d, input_files_d, index_keys_d);
   }
 
@@ -831,16 +829,16 @@ void BuildDataBlocks(char** buffer_d, GPUKeyValue* key_values_d,
     dim3 block(1);
     dim3 grid(num_data_block_last_file);
 
-    BuildDataBlocksLastFileKernel<<<grid, block, 0, stream[1]>>>(
+    BuildDataBlocksLastFileKernel<<<grid, block, 0, stream[4]>>>(
         *buffer_d, key_values_d, input_files_d, index_keys_d);
   } else {
     dim3 block(1);
     dim3 grid(num_data_block_last_file - 1);
 
-    BuildDataBlocksLastFileKernel<<<grid, block, 0, stream[2]>>>(
+    BuildDataBlocksLastFileKernel<<<grid, block, 0, stream[4]>>>(
         *buffer_d, key_values_d, input_files_d, index_keys_d);
 
-    BuildLastDataBlockLastFileKernel<<<1, 1, 0, stream[3]>>>(
+    BuildLastDataBlockLastFileKernel<<<1, 1, 0, stream[5]>>>(
         *buffer_d, key_values_d, input_files_d, index_keys_d,
         num_data_block_last_file, num_kv_last_data_block_last_file,
         num_restarts_last_data_block_last_file,
@@ -993,30 +991,30 @@ void BuildIndexBlocks(char** buffer_d, char* index_keys_d,
     dim3 block(num_outputs - 1);
     dim3 grid(num_data_block_front_file);
 
-    ComputeDataBlockHandleFrontFileKernel<<<grid, block, 0, stream[0]>>>(
+    ComputeDataBlockHandleFrontFileKernel<<<grid, block, 0, stream[6]>>>(
         block_handles_d, restarts_for_index_front_file_d);
 
     // 第二个核函数需要第一个核函数的结果，它们使用同一个流，所以不需要进行同步
-    BuildIndexBlockFrontFileKernel<<<grid, block, 0, stream[0]>>>(
+    BuildIndexBlockFrontFileKernel<<<grid, block, 0, stream[6]>>>(
         *buffer_d, index_keys_d, block_handles_d,
         restarts_for_index_front_file_d);
 
     // Checksum不在这里计算，将在WriteSSTable完成计算
-    //    ComputeChecksumFrontFileKernel<<<1, num_outputs - 1, 0, stream[1]>>>(
+    //    ComputeChecksumFrontFileKernel<<<1, num_outputs - 1, 0, stream[5]>>>(
     //        *buffer_d);
   }
 
   dim3 block(1);
   dim3 grid(num_data_block_last_file);
 
-  ComputeDataBlockHandleLastFileKernel<<<grid, block, 0, stream[1]>>>(
+  ComputeDataBlockHandleLastFileKernel<<<grid, block, 0, stream[7]>>>(
       block_handles_d, restarts_for_index_last_file_d,
       size_incomplete_data_block, num_data_block_last_file);
 
-  BuildIndexBlockLastFileKernel<<<grid, block, 0, stream[1]>>>(
+  BuildIndexBlockLastFileKernel<<<grid, block, 0, stream[7]>>>(
       *buffer_d, index_keys_d, block_handles_d, restarts_for_index_last_file_d,
       num_data_block_last_file);
-  //  ComputeChecksumLastFileKernel<<<1, 1, 0, stream[3]>>>(
+  //  ComputeChecksumLastFileKernel<<<1, 1, 0, stream[5]>>>(
   //      *buffer_d, num_data_block_last_file, index_size_last_file);
 }
 
@@ -1083,19 +1081,14 @@ void BuildSSTables(
     std::vector<SSTableInfo>& infos, std::vector<FileMetaData>& metas,
     std::vector<std::shared_ptr<WritableFileWriter>>& file_writes,
     std::vector<std::shared_ptr<TableBuilderOptions>>& tbs,
-    std::vector<TableProperties>& tps, size_t num_kv_data_block) {
+    std::vector<TableProperties>& tps, size_t num_kv_data_block,
+    cudaStream_t* stream) {
   size_t num_outputs = infos.size();  // 需要编码的文件数
 
   //  cudaEvent_t start, end;
   //  cudaEventCreate(&start);
   //  cudaEventCreate(&end);
   //  float elapsed_time;
-
-  // 注册8个流
-  cudaStream_t stream[8];
-  for (auto& s : stream) {
-    cudaStreamCreate(&s);
-  }
 
   uint32_t num_restarts = infos[0].num_restarts;  // 非最后一块的restarts数量
   uint32_t num_restarts_last_data_block_last_file =
@@ -1202,56 +1195,59 @@ void BuildSSTables(
   uint32_t* restarts_for_index_front_file_d;
   uint32_t* restarts_for_index_last_file_d;
 
-  cudaMalloc(&all_files_buffer_d, total_estimate_file_size);
-  cudaMalloc(&index_keys_d, total_num_all_data_blocks * keySize_);
-  cudaMalloc(&restarts_last_data_block_last_file_d,
-             num_restarts_last_data_block_last_file * sizeof(uint32_t));
-  cudaMalloc(&block_handles_d,
-             total_num_all_data_blocks * sizeof(GPUBlockHandle));
-  cudaMalloc(&restarts_for_index_front_file_d,
-             num_data_block_front_file * sizeof(uint32_t));
-  cudaMalloc(&restarts_for_index_last_file_d,
-             num_data_block_last_file * sizeof(uint32_t));
+  cudaMallocAsync(&all_files_buffer_d, total_estimate_file_size, stream[3]);
+  cudaMallocAsync(&index_keys_d, total_num_all_data_blocks * keySize_,
+                  stream[4]);
+  cudaMallocAsync(&restarts_last_data_block_last_file_d,
+                  num_restarts_last_data_block_last_file * sizeof(uint32_t),
+                  stream[5]);
+  cudaMallocAsync(&block_handles_d,
+                  total_num_all_data_blocks * sizeof(GPUBlockHandle),
+                  stream[6]);
+  cudaMallocAsync(&restarts_for_index_front_file_d,
+                  num_data_block_front_file * sizeof(uint32_t), stream[7]);
+  cudaMallocAsync(&restarts_for_index_last_file_d,
+                  num_data_block_last_file * sizeof(uint32_t), stream[5]);
 
   //  cudaEventRecord(start, nullptr);
   // 数据传输
   // 常量内存
   cudaMemcpyToSymbolAsync(num_data_block_d, &infos[0].num_data_block,
-                          sizeof(size_t), 0, cudaMemcpyHostToDevice, stream[0]);
+                          sizeof(size_t), 0, cudaMemcpyHostToDevice, stream[3]);
   cudaMemcpyToSymbolAsync(num_restarts_d, &num_restarts, sizeof(uint32_t), 0,
-                          cudaMemcpyHostToDevice, stream[1]);
+                          cudaMemcpyHostToDevice, stream[4]);
   cudaMemcpyToSymbolAsync(const_restarts_d, restarts,
                           num_restarts * sizeof(uint32_t), 0,
-                          cudaMemcpyHostToDevice, stream[2]);
+                          cudaMemcpyHostToDevice, stream[5]);
   cudaMemcpyToSymbolAsync(size_complete_data_block_d, &size_complete_data_block,
-                          sizeof(size_t), 0, cudaMemcpyHostToDevice, stream[3]);
+                          sizeof(size_t), 0, cudaMemcpyHostToDevice, stream[6]);
   cudaMemcpyToSymbolAsync(total_num_kv_front_file_d, &total_num_kv_front_file,
-                          sizeof(size_t), 0, cudaMemcpyHostToDevice, stream[4]);
+                          sizeof(size_t), 0, cudaMemcpyHostToDevice, stream[7]);
   cudaMemcpyToSymbolAsync(size_front_file_d, &estimate_file_size,
-                          sizeof(size_t), 0, cudaMemcpyHostToDevice, stream[5]);
+                          sizeof(size_t), 0, cudaMemcpyHostToDevice, stream[3]);
   cudaMemcpyToSymbolAsync(num_outputs_d, &num_outputs, sizeof(size_t), 0,
-                          cudaMemcpyHostToDevice, stream[6]);
+                          cudaMemcpyHostToDevice, stream[4]);
   cudaMemcpyToSymbolAsync(data_size_d, &data_size, sizeof(size_t), 0,
-                          cudaMemcpyHostToDevice, stream[7]);
+                          cudaMemcpyHostToDevice, stream[5]);
   cudaMemcpyToSymbolAsync(data_size_last_file_d, &data_size_last_file,
-                          sizeof(size_t), 0, cudaMemcpyHostToDevice, stream[0]);
+                          sizeof(size_t), 0, cudaMemcpyHostToDevice, stream[6]);
   cudaMemcpyToSymbolAsync(index_size_d, &index_size, sizeof(size_t), 0,
-                          cudaMemcpyHostToDevice, stream[1]);
+                          cudaMemcpyHostToDevice, stream[7]);
 
   // 全局内存
   CHECK(cudaMemcpyAsync(
       restarts_last_data_block_last_file_d, restarts_last_data_block_last_file,
       num_restarts_last_data_block_last_file * sizeof(uint32_t),
-      cudaMemcpyHostToDevice, stream[2]));
+      cudaMemcpyHostToDevice, stream[3]));
+
+  for(size_t i = 3; i < 8; i++) {
+    CHECK(cudaStreamSynchronize(stream[i]));
+  }
 
   //  cudaEventRecord(end, nullptr);
   //  cudaEventSynchronize(end);
   //  cudaEventElapsedTime(&elapsed_time, start, end);
   //  gpu_stats.transmission_time += elapsed_time;
-
-  for (auto& s : stream) {
-    cudaStreamSynchronize(s);
-  }
 
   auto start_time = std::chrono::high_resolution_clock::now();
 
@@ -1270,25 +1266,23 @@ void BuildSSTables(
                    size_incomplete_data_block, restarts_for_index_front_file_d,
                    restarts_for_index_last_file_d, stream);
 
-  CHECK(cudaDeviceSynchronize());
+  for(size_t i = 3; i < 8; i++) {
+    CHECK(cudaStreamSynchronize(stream[i]));
+  }
 
   auto end_time = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
       end_time - start_time);
 
-  //  mutex_for_gpu_compaction.lock();
   gpu_stats.gpu_all_micros += duration.count();
-  //  mutex_for_gpu_compaction.unlock();
 
   CHECK(cudaMemcpyAsync(all_files_buffer, all_files_buffer_d,
                         total_estimate_file_size, cudaMemcpyDeviceToHost,
-                        stream[0]));
+                        stream[3]));
 
-  // 同步流并释放
-  for (auto& s : stream) {
-    cudaStreamSynchronize(s);
-    cudaStreamDestroy(s);
-  }
+  CHECK(cudaStreamSynchronize(stream[3]));
+
+  mutex_for_gpu_compaction.unlock();
 
   // 写SSTable
   // 方法1
@@ -1384,13 +1378,13 @@ void BuildSSTables(
                data_size_last_file, index_size_last_file);*/
 
   // 方法4
-  thread_pool_for_gpu.clear();
+  std::vector<std::thread> thread_pool;
+  thread_pool.reserve(1);
   if (num_outputs > 1) {
-    thread_pool_for_gpu.reserve(num_outputs / 2);
-    thread_pool_for_gpu.emplace_back([&all_files_buffer, &num_outputs,
-                                      &estimate_file_size, &compaction_job,
-                                      &compact, &file_writes, &tbs, &metas,
-                                      &tps, &infos, &data_size, &index_size] {
+    thread_pool.emplace_back([&all_files_buffer, &num_outputs,
+                              &estimate_file_size, &compaction_job, &compact,
+                              &file_writes, &tbs, &metas, &tps, &infos,
+                              &data_size, &index_size] {
       for (size_t i = 0; i < num_outputs / 2; ++i) {
         char* current_file_buffer = all_files_buffer + estimate_file_size * i;
         WriteSSTable(current_file_buffer, compaction_job, compact,
@@ -1426,7 +1420,7 @@ void BuildSSTables(
   delete[] restarts;
   delete[] restarts_last_data_block_last_file;
 
-  for (auto& thread : thread_pool_for_gpu) {
+  for (auto& thread : thread_pool) {
     thread.join();
   }
   cudaFreeHost(all_files_buffer);

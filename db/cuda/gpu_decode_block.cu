@@ -161,12 +161,7 @@ __global__ void DecodeDataBlocksKernel(InputFile* inputFiles,
 
 GPUKeyValue* GetAndSort(const InputFile* inputFiles, size_t num_file,
                         InputFile** inputFiles_d, size_t num_kv_data_block,
-                        size_t& sorted_size) {
-  cudaStream_t stream[4];
-  for (auto& s : stream) {
-    cudaStreamCreate(&s);
-  }
-
+                        size_t& sorted_size, cudaStream_t* stream) {
   //  cudaEvent_t start, end;
   //  cudaEventCreate(&start);
   //  cudaEventCreate(&end);
@@ -174,7 +169,7 @@ GPUKeyValue* GetAndSort(const InputFile* inputFiles, size_t num_file,
 
   // 准备输入数据
   // footer、索引块和数据块共有输入数据
-  cudaMalloc(inputFiles_d, num_file * sizeof(InputFile));
+  cudaMallocAsync(inputFiles_d, num_file * sizeof(InputFile), stream[0]);
 
   uint64_t all_num_kv = 0;
   size_t max_num_data_block = 0;
@@ -184,20 +179,20 @@ GPUKeyValue* GetAndSort(const InputFile* inputFiles, size_t num_file,
 
   for (int i = 0; i < num_file; ++i) {
     char* file_d;
-    CHECK(cudaMalloc(&file_d, inputFiles[i].file_size));
+    CHECK(cudaMallocAsync(&file_d, inputFiles[i].file_size, stream[0]));
 
     //    cudaEventRecord(start, nullptr);
     CHECK(cudaMemcpyAsync(file_d, inputFiles[i].file, inputFiles[i].file_size,
                           cudaMemcpyHostToDevice, stream[0]));
 
     CHECK(cudaMemcpyAsync(&(*inputFiles_d)[i].file, &file_d, sizeof(char*),
-                          cudaMemcpyHostToDevice, stream[1]));
+                          cudaMemcpyHostToDevice, stream[0]));
     //    cudaEventRecord(end, nullptr);
     //    cudaEventSynchronize(end);
     //    cudaEventElapsedTime(&elapsed_time, start, end);
     //    gpu_stats.transmission_time += elapsed_time;
 
-    SetInputFies<<<1, 1, 0, stream[0]>>>(
+    SetInputFies<<<1, 1, 0, stream[1]>>>(
         &(*inputFiles_d)[i], inputFiles[i].level, inputFiles[i].file_size,
         inputFiles[i].file_number, inputFiles[i].num_data_blocks,
         inputFiles[i].num_entries);
@@ -223,10 +218,10 @@ GPUKeyValue* GetAndSort(const InputFile* inputFiles, size_t num_file,
                           sizeof(size_t), 0, cudaMemcpyHostToDevice, stream[2]);
   cudaMemcpyToSymbolAsync(num_data_blocks_d, num_data_blocks,
                           num_file * sizeof(size_t), 0, cudaMemcpyHostToDevice,
-                          stream[3]);
+                          stream[0]);
   cudaMemcpyToSymbolAsync(num_kv_last_data_blocks_d, num_kv_last_data_blocks,
                           num_file * sizeof(size_t), 0, cudaMemcpyHostToDevice,
-                          stream[0]);
+                          stream[1]);
 
   //  cudaEventRecord(end, nullptr);
   //  cudaEventSynchronize(end);
@@ -234,21 +229,28 @@ GPUKeyValue* GetAndSort(const InputFile* inputFiles, size_t num_file,
   //  gpu_stats.transmission_time += elapsed_time;
 
   uint32_t* all_restarts_d;
-  cudaMalloc(&all_restarts_d, num_file * max_num_data_block * sizeof(uint32_t));
+  cudaMallocAsync(&all_restarts_d,
+                  num_file * max_num_data_block * sizeof(uint32_t), stream[2]);
 
   GPUBlockHandle* index_blocks_d;  // 索引块
-  cudaMalloc(&index_blocks_d,
-             num_file * max_num_data_block * sizeof(GPUBlockHandle));
+  cudaMallocAsync(&index_blocks_d,
+                  num_file * max_num_data_block * sizeof(GPUBlockHandle),
+                  stream[0]);
 
   GPUBlockHandle* footers_d;
-  cudaMalloc(&footers_d, sizeof(GPUBlockHandle) * num_file);
+  cudaMallocAsync(&footers_d, sizeof(GPUBlockHandle) * num_file, stream[1]);
 
   uint32_t* global_count;
-  cudaMalloc(&global_count, all_num_kv * sizeof(uint32_t));
-  cudaMemset(global_count, 0, all_num_kv);
+  cudaMallocAsync(&global_count, all_num_kv * sizeof(uint32_t), stream[2]);
+  cudaMemsetAsync(global_count, 0, all_num_kv * sizeof(uint32_t), stream[2]);
 
   GPUKeyValue* key_value_d;
-  cudaMalloc((void**)&key_value_d, all_num_kv * sizeof(GPUKeyValue));
+  cudaMallocAsync((void**)&key_value_d, all_num_kv * sizeof(GPUKeyValue),
+                  stream[0]);
+
+  for (size_t i = 0; i < 3; i++) {
+    CHECK(cudaStreamSynchronize(stream[i]));
+  }
 
   // 准备执行核函数
   dim3 block(num_file);
@@ -267,6 +269,8 @@ GPUKeyValue* GetAndSort(const InputFile* inputFiles, size_t num_file,
   DecodeDataBlocksKernel<<<grid, block, 0, stream[0]>>>(
       *inputFiles_d, global_count, index_blocks_d, key_value_d);
 
+  CHECK(cudaStreamSynchronize(stream[0]));
+
   GPUSort(key_value_d, all_num_kv, sorted_size);
 
   auto end_time = std::chrono::high_resolution_clock::now();
@@ -280,9 +284,6 @@ GPUKeyValue* GetAndSort(const InputFile* inputFiles, size_t num_file,
   cudaFree(index_blocks_d);
   cudaFree(footers_d);
   cudaFree(global_count);
-  for (auto& s : stream) {
-    cudaStreamDestroy(s);
-  }
 
   // 释放 CPU 内存
   delete[] num_kv_last_data_blocks;

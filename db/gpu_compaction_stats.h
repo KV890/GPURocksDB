@@ -18,8 +18,6 @@ class GPUCompactionStats {
 
   void ResetStats();
 
-  uint64_t cpu_total_input_bytes;
-  uint64_t cpu_total_output_bytes;
   uint64_t cpu_all_micros;
 
   uint64_t gpu_total_input_bytes;

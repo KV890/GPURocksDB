@@ -9,9 +9,7 @@ namespace ROCKSDB_NAMESPACE {
 GPUCompactionStats gpu_stats;
 
 GPUCompactionStats::GPUCompactionStats()
-    : cpu_total_input_bytes(0),
-      cpu_total_output_bytes(0),
-      cpu_all_micros(0),
+    : cpu_all_micros(0),
       gpu_total_input_bytes(0),
       gpu_total_output_bytes(0),
       gpu_all_micros(0),
@@ -20,30 +18,10 @@ GPUCompactionStats::GPUCompactionStats()
       transmission_time(0) {}
 
 void GPUCompactionStats::PrintStats() const {
-  std::cout << "-------------CPU-------------" << std::endl;
-
   std::cout << "CPU 总compaction时间: " << cpu_all_micros << " us, "
             << static_cast<double>(static_cast<double>(cpu_all_micros) /
                                    1000000)
             << " sec" << std::endl;
-  std::cout << "CPU compaction总读入量: " << cpu_total_input_bytes << " bytes, "
-            << static_cast<double>(static_cast<double>(cpu_total_input_bytes) /
-                                   (1024 * 1024 * 1024))
-            << " GB" << std::endl;
-  std::cout << "CPU compaction总写入量: " << cpu_total_output_bytes
-            << " bytes, "
-            << static_cast<double>(static_cast<double>(cpu_total_output_bytes) /
-                                   (1024 * 1024 * 1024))
-            << " GB" << std::endl;
-
-  std::cout << "CPU compaction 总吞吐量: "
-            << static_cast<double>(
-                   static_cast<double>(
-                       (static_cast<double>(cpu_total_input_bytes) +
-                        static_cast<double>(cpu_total_output_bytes)) /
-                       (1024 * 1024)) /
-                   (static_cast<double>(cpu_all_micros) / 1000000.0))
-            << " MB/s" << std::endl;
 
   std::cout << "-------------GPU-------------" << std::endl;
 
@@ -90,8 +68,6 @@ void GPUCompactionStats::PrintStats() const {
 }
 
 void GPUCompactionStats::ResetStats() {
-  cpu_total_input_bytes = 0;
-  cpu_total_output_bytes = 0;
   cpu_all_micros = 0;
 
   gpu_total_input_bytes = 0;

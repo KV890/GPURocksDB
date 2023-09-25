@@ -2,36 +2,50 @@
 
 namespace ROCKSDB_NAMESPACE {
 
+void CreateStream(cudaStream_t* stream, size_t stream_size) {
+  for (size_t i = 0; i < stream_size; ++i) {
+    cudaStreamCreate(&stream[i]);
+  }
+}
+
+void DestroyStream(cudaStream_t* stream, size_t stream_size) {
+  for (size_t i = 0; i < stream_size; ++i) {
+    cudaStreamDestroy(stream[i]);
+  }
+}
+
 GPUKeyValue* DecodeAndSort(const InputFile* inputFiles, size_t num_inputs,
                            InputFile** inputFiles_d, size_t num_kv_data_block,
-                           GPUKeyValue** result_h, size_t& sorted_size) {
+                           GPUKeyValue** result_h, size_t& sorted_size,
+                           cudaStream_t* stream) {
   //  cudaEvent_t start, end;
   //  cudaEventCreate(&start);
   //  cudaEventCreate(&end);
   //  float elapsed_time;
 
   // 记录整个解析SSTable的时间
-  //  auto start_time = std::chrono::high_resolution_clock::now();
+//  auto start_time = std::chrono::high_resolution_clock::now();
   GPUKeyValue* result_d = GetAndSort(inputFiles, num_inputs, inputFiles_d,
-                                     num_kv_data_block, sorted_size);
+                                     num_kv_data_block, sorted_size, stream);
 
   cudaHostAlloc((void**)result_h, sorted_size * sizeof(GPUKeyValue),
                 cudaHostAllocDefault);
-  //  *result_h = new GPUKeyValue[sorted_size];
-  //  cudaEventRecord(start, nullptr);
-  cudaMemcpy(*result_h, result_d, sorted_size * sizeof(GPUKeyValue),
-             cudaMemcpyDeviceToHost);
+//  cudaEventRecord(start, nullptr);
+  cudaMemcpyAsync(*result_h, result_d, sorted_size * sizeof(GPUKeyValue),
+                  cudaMemcpyDeviceToHost, stream[0]);
 
-  //  cudaEventRecord(end, nullptr);
-  //  cudaEventSynchronize(end);
-  //  cudaEventElapsedTime(&elapsed_time, start, end);
-  //  gpu_stats.transmission_time += elapsed_time;
+  cudaStreamSynchronize(stream[0]);
 
-  //  auto end_time = std::chrono::high_resolution_clock::now();
-  //  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-  //      end_time - start_time);
-  //  std::cout << "GPU decode and sort time: " << duration.count() << " us"
-  //            << std::endl;
+//  cudaEventRecord(end, nullptr);
+//  cudaEventSynchronize(end);
+//  cudaEventElapsedTime(&elapsed_time, start, end);
+//  gpu_stats.transmission_time += elapsed_time;
+
+//  auto end_time = std::chrono::high_resolution_clock::now();
+//  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
+//      end_time - start_time);
+//  std::cout << "GPU decode and sort time: " << duration.count() << " us"
+//            << std::endl;
 
   return result_d;
 }
@@ -122,17 +136,18 @@ void EncodeSSTables(
     std::vector<SSTableInfo>& infos, std::vector<FileMetaData>& metas,
     std::vector<std::shared_ptr<WritableFileWriter>>& file_writes,
     std::vector<std::shared_ptr<TableBuilderOptions>>& tbs,
-    std::vector<TableProperties>& tps, size_t num_kv_data_block) {
+    std::vector<TableProperties>& tps, size_t num_kv_data_block,
+    cudaStream_t* stream) {
   auto start_time = std::chrono::high_resolution_clock::now();
 
   BuildSSTables(compaction_job, compact, key_values_d, input_files_d, infos,
-                metas, file_writes, tbs, tps, num_kv_data_block);
+                metas, file_writes, tbs, tps, num_kv_data_block, stream);
 
   auto end_time = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
       end_time - start_time);
-  //  std::cout << "GPU Encode SSTable time: " << duration.count() << " us\n";
-  //  printf("---------------------\n");
+//  std::cout << "GPU Encode SSTable time: " << duration.count() << " us\n";
+//  printf("---------------------\n");
 }
 
 void ReleaseDevPtr(char** blocks_buffer_d) { cudaFreeHost(*blocks_buffer_d); }

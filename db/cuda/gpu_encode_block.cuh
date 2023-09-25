@@ -174,8 +174,8 @@
  *
  *
  */
-
 #include <cuda_runtime.h>
+#include <driver_types.h>
 
 #include <cstdlib>
 #include <memory>
@@ -871,6 +871,7 @@ void BuildSSTables(
     std::vector<SSTableInfo>& infos, std::vector<FileMetaData>& metas,
     std::vector<std::shared_ptr<WritableFileWriter>>& file_writes,
     std::vector<std::shared_ptr<TableBuilderOptions>>& tbs,
-    std::vector<TableProperties>& tps, size_t num_kv_data_block);
+    std::vector<TableProperties>& tps, size_t num_kv_data_block,
+    cudaStream_t* stream);
 
 }  // namespace ROCKSDB_NAMESPACE

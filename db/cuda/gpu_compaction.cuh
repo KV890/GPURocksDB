@@ -1,5 +1,6 @@
 #pragma once
 
+#include <driver_types.h>
 #include <snappy.h>
 #include <sys/time.h>
 
@@ -34,6 +35,9 @@ namespace ROCKSDB_NAMESPACE {
 
 class CompactionJob;
 
+void CreateStream(cudaStream_t* stream, size_t stream_size);
+void DestroyStream(cudaStream_t* stream, size_t stream_size);
+
 /**
  * 解码
  * @param inputFiles
@@ -44,7 +48,8 @@ class CompactionJob;
  */
 GPUKeyValue* DecodeAndSort(const InputFile* inputFiles, size_t num_inputs,
                            InputFile** inputFiles_d, size_t num_kv_data_block,
-                           GPUKeyValue** result_h, size_t& sorted_size);
+                           GPUKeyValue** result_h, size_t& sorted_size,
+                           cudaStream_t* stream);
 
 /**
  * 计算一个数据块中键值对的数量
@@ -99,7 +104,8 @@ void EncodeSSTables(
     std::vector<SSTableInfo>& infos, std::vector<FileMetaData>& metas,
     std::vector<std::shared_ptr<WritableFileWriter>>& file_writes,
     std::vector<std::shared_ptr<TableBuilderOptions>>& tbs,
-    std::vector<TableProperties>& tps, size_t num_kv_data_block);
+    std::vector<TableProperties>& tps, size_t num_kv_data_block,
+    cudaStream_t* stream);
 
 /**
  * 释放资源

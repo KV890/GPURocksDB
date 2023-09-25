@@ -23,6 +23,7 @@
  *
  */
 
+#include <driver_types.h>
 #include <snappy.h>
 
 #include <cstdlib>
@@ -335,6 +336,6 @@ __global__ void DecodeDataBlocksKernel(InputFile* inputFiles,
  */
 GPUKeyValue* GetAndSort(const InputFile* inputFiles, size_t num_file,
                         InputFile** inputFiles_d, size_t num_kv_data_block,
-                        size_t& sorted_size);
+                        size_t& sorted_size, cudaStream_t* stream);
 
 }  // namespace ROCKSDB_NAMESPACE
