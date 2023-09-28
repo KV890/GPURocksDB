@@ -218,6 +218,10 @@ class CompactionJob {
   void OpenOutputFile(size_t i, const Compaction* compact,
                       const std::vector<GPUKeyValue>& input);
 
+  void OpenOutputFile(size_t i, const Compaction* compact,
+                      const char* largest_key, const char* smallest_key,
+                      uint64_t largest_seqno, uint64_t smallest_seqno);
+
   Status MyOpenCompactionOutputFile(
       const Compaction* compact,
       std::shared_ptr<WritableFileWriter>& file_writer, FileMetaData& metaData,

@@ -699,7 +699,7 @@ struct DBOptions {
   // Default: 2
   //
   // Dynamically changeable through SetDBOptions() API.
-  int max_background_jobs = 8;
+  int max_background_jobs = 2;
 
   // DEPRECATED: RocksDB automatically decides this based on the
   // value of max_background_jobs. For backwards compatibility we will set
@@ -717,7 +717,7 @@ struct DBOptions {
   // Default: -1
   //
   // Dynamically changeable through SetDBOptions() API.
-  int max_background_compactions = -1;
+  int max_background_compactions = 1;
 
   // This value represents the maximum number of threads that will
   // concurrently perform a compaction job by breaking it into multiple,

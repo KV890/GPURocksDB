@@ -41,9 +41,6 @@ inline std::vector<std::thread> thread_pool_for_gpu;
 
 // 一个文件的数据块数量
 inline __constant__ size_t num_data_block_d;
-inline __constant__ size_t num_data_blocks_d[100];
-inline __constant__ size_t max_num_data_block_d;
-inline __constant__ size_t num_kv_last_data_blocks_d[100];
 // 数据块中键值对数量
 inline __constant__ size_t num_kv_data_block_d;
 // 最后一个数据块键值对数量
@@ -72,10 +69,11 @@ inline __constant__ size_t data_size_last_file_d;
 inline __constant__ size_t index_size_d;
 
 struct SSTableInfo {
-  SSTableInfo() = default;
+  __host__ __device__ SSTableInfo() = default;
 
-  SSTableInfo(size_t _num_data_block, size_t _num_kv_last_data_block,
-              size_t _num_restarts, size_t _total_num_kv)
+  __host__ __device__ SSTableInfo(size_t _num_data_block,
+                                  size_t _num_kv_last_data_block,
+                                  size_t _num_restarts, size_t _total_num_kv)
       : num_data_block(_num_data_block),
         num_kv_last_data_block(_num_kv_last_data_block),
         num_restarts(_num_restarts),

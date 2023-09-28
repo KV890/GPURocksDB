@@ -99,20 +99,6 @@ class GPUKeyValue {
   unsigned char type;
   uint64_t file_number;
 
-  __host__ __device__ GPUKeyValue &operator=(const GPUKeyValue &other) {
-    if (this == &other) {
-      return *this;
-    }
-
-    memcpy(key, other.key, keySize_ + 8);
-    valuePtr = other.valuePtr;
-    sequence = other.sequence;
-    type = other.type;
-    file_number = other.file_number;
-
-    return *this;
-  }
-
   __host__ __device__ bool operator<(const GPUKeyValue &other) const {
     const auto *p1 = (const unsigned char *)key;
     const auto *p2 = (const unsigned char *)other.key;
@@ -153,28 +139,6 @@ class GPUKeyValue {
   }
 };
 
-//__global__ void GPUTransform(GPUKeyValue *key_value_d, size_t num_element);
-
 void GPUSort(GPUKeyValue *key_value_d, size_t num_element, size_t &sorted_size);
-
-__global__ void GPURadixSortAssertion(GPUKeyValue *key_value_d,
-                                      size_t num_element);
-
-__global__ void HistogramKernel(GPUKeyValue *key_value_d, size_t num_element,
-                                uint32_t bit, uint32_t *histogram_d);
-
-__global__ void ScanKernel(uint32_t *histogram_d, uint32_t *prefix_sum,
-                           size_t size);
-
-__global__ void ReorderKernel(GPUKeyValue *key_value_d, size_t num_element,
-                              uint32_t bit, uint32_t *prefix_sum,
-                              GPUKeyValue *output_d);
-
-void GPURadixSort(GPUKeyValue *key_value_d, size_t num_element,
-                  size_t &sorted_size);
-
-void CPUCountingSort(GPUKeyValue *key_value_h, int idx, size_t num_element);
-
-void CPURadixSort(GPUKeyValue *key_value_h, size_t num_element);
 
 }  // namespace ROCKSDB_NAMESPACE

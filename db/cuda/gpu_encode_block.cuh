@@ -525,7 +525,7 @@ void GPUWriteBlock(char** buffer_d, const Slice& block_contents,
  * @param new_offset
  * @param props
  */
-void BuildPropertiesBlock(char** buffer, FileMetaData* meta,
+[[maybe_unused]] [[maybe_unused]] [[maybe_unused]] void BuildPropertiesBlock(char** buffer, FileMetaData* meta,
                           const std::shared_ptr<TableBuilderOptions>& tboptions,
                           size_t data_size, size_t index_size,
                           MetaIndexBuilder* metaIndexBuilder,
@@ -542,11 +542,11 @@ void BuildPropertiesBlock(char** buffer, FileMetaData* meta,
  * @param new_offset
  * @param props
  */
-void GPUBuildPropertiesBlock(char** buffer_d, FileMetaData& meta,
-                             std::shared_ptr<TableBuilderOptions>& tboptions,
-                             size_t data_size, size_t index_size,
-                             MetaIndexBuilder* metaIndexBuilder,
-                             size_t& new_offset, TableProperties& props);
+void GPUBuildPropertiesBlock(
+    char** buffer_d, FileMetaData* meta,
+    const std::shared_ptr<TableBuilderOptions>& tboptions, size_t data_size,
+    size_t index_size, MetaIndexBuilder* metaIndexBuilder, size_t& new_offset,
+    TableProperties* props);
 
 /**
  * CPU执行
@@ -557,7 +557,7 @@ void GPUBuildPropertiesBlock(char** buffer_d, FileMetaData& meta,
  * @param last_offset
  * @param new_offset
  */
-void BuildMetaIndexBlock(char** buffer, MetaIndexBuilder* metaIndexBuilder,
+[[maybe_unused]] [[maybe_unused]] [[maybe_unused]] void BuildMetaIndexBlock(char** buffer, MetaIndexBuilder* metaIndexBuilder,
                          BlockHandle* meta_index_block_handle,
                          size_t last_offset, size_t& new_offset);
 
@@ -584,14 +584,10 @@ void GPUBuildMetaIndexBlock(char** buffer_d, MetaIndexBuilder* metaIndexBuilder,
  * @param format_version
  * @param magic_number
  */
-__global__ void BuilderFooterKernel(char* buffer_d, size_t index_block_offset,
-                                    size_t index_block_size,
-                                    size_t meta_index_offset,
-                                    size_t meta_index_size, char checksum_type,
-                                    uint32_t format_version,
-                                    uint64_t magic_number);
+__global__ void BuilderFooterKernel(char* buffer_d, char* footer_d,
+                                    size_t footer_size);
 
-void BuildFooter(char** buffer, BlockHandle& index_block_handle,
+[[maybe_unused]] [[maybe_unused]] [[maybe_unused]] void BuildFooter(char** buffer, BlockHandle& index_block_handle,
                  BlockHandle& meta_index_block_handle, size_t last_offset,
                  size_t& new_offset);
 
@@ -837,7 +833,7 @@ void BuildIndexBlocks(char** buffer_d, char* index_keys_d,
 /**
  * 写其他三个块
  *
- * @param buffer 指向主机内存，表示每个SSTable首地址
+ * @param buffer_d 指向主机内存，表示每个SSTable首地址
  * @param file_writer
  * @param meta
  * @param tbs
@@ -846,7 +842,7 @@ void BuildIndexBlocks(char** buffer_d, char* index_keys_d,
  * @param data_size
  * @param index_size
  */
-void WriteSSTable(char* buffer, CompactionJob* compaction_job,
+void WriteSSTable(char* buffer_d, CompactionJob* compaction_job,
                   const Compaction* compact,
                   const std::shared_ptr<WritableFileWriter>& file_writer,
                   const std::shared_ptr<TableBuilderOptions>& tbs,

@@ -2056,9 +2056,9 @@ void CompactionJob::UpdateCompactionJobStats(
   compaction_job_stats_->num_output_files = stats.num_output_files;
   compaction_job_stats_->num_output_files_blob = stats.num_output_files_blob;
 
-  mutex_for_gpu_compaction.lock();
+//  mutex_for_gpu_compaction.lock();
   gpu_stats.cpu_all_micros += compaction_job_stats_->elapsed_micros;
-  mutex_for_gpu_compaction.unlock();
+//  mutex_for_gpu_compaction.unlock();
 
   if (stats.num_output_files > 0) {
     CopyPrefix(compact_->SmallestUserKey(),
@@ -2187,6 +2187,30 @@ void CompactionJob::OpenOutputFile(size_t i, const Compaction* compact,
 
   meta.fd.smallest_seqno = min->sequence;
   meta.fd.largest_seqno = max->sequence;
+
+  file_writers[i] = file_writer;
+  tbs[i] = tboptions;
+  metas[i] = meta;
+  tps[i] = tp;
+}
+
+void CompactionJob::OpenOutputFile(size_t i, const Compaction* compact,
+                                   const char* largest_key,
+                                   const char* smallest_key,
+                                   uint64_t largest_seqno,
+                                   uint64_t smallest_seqno) {
+  std::shared_ptr<WritableFileWriter> file_writer;
+  std::shared_ptr<TableBuilderOptions> tboptions;
+  TableProperties tp;
+  FileMetaData meta;
+
+  MyOpenCompactionOutputFile(compact, file_writer, meta, tboptions);
+
+  meta.largest.DecodeFrom(Slice(largest_key, keySize_ + 8));
+  meta.smallest.DecodeFrom(Slice(smallest_key, keySize_ + 8));
+
+  meta.fd.largest_seqno = largest_seqno;
+  meta.fd.smallest_seqno = smallest_seqno;
 
   file_writers[i] = file_writer;
   tbs[i] = tboptions;
@@ -2337,8 +2361,8 @@ Status CompactionJob::MyFinishCompactionOutputFile(
     }
   }
 
-  file_writer->Sync(false);
-  file_writer->Close();
+//  file_writer->Sync(false);
+//  file_writer->Close();
   meta->file_checksum = file_writer->GetFileChecksum();
   meta->file_checksum_func_name = file_writer->GetFileChecksumFuncName();
 
@@ -2399,21 +2423,7 @@ Status CompactionJob::GPUCompaction(CompactionJob* compaction_job,
     num_inputs += compact->inputs(i)->size();
   }
 
-  std::vector<InputFile> input_files;
-  input_files.reserve(num_inputs);
-  input_files.resize(num_inputs);
-
   size_t gpu_input_bytes = 0;
-
-  size_t last_size = 0;
-  for (size_t i = 0; i < num_input_level; ++i) {
-    auto* inputs = compact->inputs(i);
-    for (size_t j = 0; j < inputs->size(); ++j) {
-      gpu_input_bytes += inputs->at(j)->fd.file_size;
-      AddInputFiles(j, &input_files[last_size * i + j], inputs->at(j));
-    }
-    last_size = inputs->size();
-  }
 
   // 确定每个数据块的KV对数量 num_kv_data_block
   size_t num_kv_data_block = ComputeNumKVDataBlock();
@@ -2422,74 +2432,77 @@ Status CompactionJob::GPUCompaction(CompactionJob* compaction_job,
   // 该指针会在解析SSTable中被赋值，在编码SSTable时使用，编码结束后释放该指针资源
   InputFile* input_files_d = nullptr;
 
-  // 解码和排序
-  GPUKeyValue* result_h = nullptr;
-  size_t sorted_size;
+  MallocInputFiles(&input_files_d, num_inputs);
 
+  size_t last_size = 0;
+  for (size_t i = 0; i < num_input_level; ++i) {
+    auto* inputs = compact->inputs(i);
+    for (size_t j = 0; j < inputs->size(); ++j) {
+      gpu_input_bytes += inputs->at(j)->fd.file_size;
+      AddInputFile(compact_->compaction->level(i),
+                   GetTableFileName(inputs->at(j)->fd.GetNumber()),
+                   inputs->at(j), &input_files_d[last_size * i + j]);
+    }
+    last_size = inputs->size();
+  }
+
+  // 解码和排序
   cudaStream_t stream[8];
   CreateStream(stream, 8);
 
-  mutex_for_gpu_compaction.lock();
+//  mutex_for_gpu_compaction.lock();
+
+  size_t sorted_size;
 
   GPUKeyValue* result_d =
-      DecodeAndSort(input_files.data(), num_inputs, &input_files_d,
-                    num_kv_data_block, &result_h, sorted_size, stream);
+      DecodeAndSort(num_inputs, input_files_d, num_kv_data_block,
+                    sorted_size, stream);
 
-  mutex_for_gpu_compaction.unlock();
+//  mutex_for_gpu_compaction.unlock();
 
   // 编码
   // 编码准备: 划分键值对到多个SSTable
   EncodePrepare(sorted_size, infos, num_kv_data_block);
 
-  metas.reserve(infos.size());
-  metas.resize(infos.size());
-  tps.reserve(infos.size());
-  tps.resize(infos.size());
+  size_t info_size = infos.size();
 
-  size_t current_num_kv = 0;
+  metas.resize(info_size);
+  tps.resize(info_size);
+  file_writers.resize(info_size);
+  tbs.resize(info_size);
 
-  file_writers.reserve(infos.size());
-  file_writers.resize(infos.size());
-  tbs.reserve(infos.size());
-  tbs.resize(infos.size());
+  auto largest_key = std::make_unique<char[]>(info_size * (keySize_ + 8));
+  auto smallest_key = std::make_unique<char[]>(info_size * (keySize_ + 8));
+  std::vector<uint64_t> largest_seqno(info_size);
+  std::vector<uint64_t> smallest_seqno(info_size);
 
-  std::vector<std::vector<GPUKeyValue>> inputs;
-  inputs.reserve(infos.size());
-
-  std::vector<GPUKeyValue> tmp;
-  for (auto& info : infos) {
-    tmp.clear();
-    tmp.reserve(info.total_num_kv);
-    tmp.insert(tmp.begin(), result_h + current_num_kv,
-               result_h + current_num_kv + info.total_num_kv);
-    inputs.emplace_back(tmp);
-    current_num_kv += info.total_num_kv;
-  }
-
-  ReleaseSource(&result_h);
+  PrepareOutput(infos.data(), info_size, result_d, largest_key.get(),
+                smallest_key.get(), largest_seqno.data(), smallest_seqno.data(),
+                stream);
 
   // GPU并行编码多SSTable
-  for (size_t i = 0; i < inputs.size(); ++i) {
-    OpenOutputFile(i, compact, inputs[i]);
+  for (size_t i = 0; i < info_size; ++i) {
+    OpenOutputFile(i, compact, largest_key.get() + i * (keySize_ + 8),
+                   smallest_key.get() + i * (keySize_ + 8), largest_seqno[i],
+                   smallest_seqno[i]);
   }
 
-  mutex_for_gpu_compaction.lock();
+//  mutex_for_gpu_compaction.lock();
 
   // GPU并行编码多SSTable
   EncodeSSTables(compaction_job, compact, result_d, input_files_d, infos, metas,
                  file_writers, tbs, tps, num_kv_data_block, stream);
 
   DestroyStream(stream, 8);
-
-  ReleaseSource(&input_files_d, num_inputs);
+  ReleaseSource(input_files_d, num_inputs);
 
   compaction_stats_.SetMicros(db_options_.clock->NowMicros() - start_micros);
 
-  //  printf("Compaction time: %lu us\n", compaction_stats_.stats.micros);
+  printf("Compaction time: %lu us\n", compaction_stats_.stats.micros);
 
   compaction_stats_.AddCpuMicros(compaction_stats_.stats.micros);
 
-  mutex_for_gpu_compaction.lock();
+//  mutex_for_gpu_compaction.lock();
 
   gpu_stats.gpu_total_input_bytes += gpu_input_bytes;
   gpu_stats.gpu_compaction_count++;
@@ -2499,7 +2512,7 @@ Status CompactionJob::GPUCompaction(CompactionJob* compaction_job,
     compaction_stats_.stats.bytes_written += info.file_size;
   }
 
-  mutex_for_gpu_compaction.unlock();
+//  mutex_for_gpu_compaction.unlock();
 
   RecordTimeToHistogram(stats_, COMPACTION_TIME,
                         compaction_stats_.stats.micros);

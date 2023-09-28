@@ -4,6 +4,8 @@
 
 #include "gpu_compaction_stats.h"
 
+#include <cufile.h>
+
 namespace ROCKSDB_NAMESPACE {
 
 GPUCompactionStats gpu_stats;
@@ -79,5 +81,9 @@ void GPUCompactionStats::ResetStats() {
 
   transmission_time = 0;
 }
+
+void GPUCompactionStats::OpenCuFileDriver() { cuFileDriverOpen(); }
+
+void GPUCompactionStats::CloseCuFileDriver() { cuFileDriverClose(); }
 
 }  // namespace ROCKSDB_NAMESPACE

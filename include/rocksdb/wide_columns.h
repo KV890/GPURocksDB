@@ -5,6 +5,8 @@
 
 #pragma once
 
+#include <cufile.h>
+
 #include <ostream>
 #include <tuple>
 #include <utility>

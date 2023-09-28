@@ -2,6 +2,10 @@
 // Created by jxx on 5/6/23.
 //
 
+#include <fcntl.h>
+
+#include <csignal>
+
 #include "gpu_encode_block.cuh"
 
 namespace ROCKSDB_NAMESPACE {
@@ -282,11 +286,11 @@ void GPUWriteBlock(char** buffer_d, const Slice& block_contents,
   new_offset = last_offset + block_contents.size() + 5;
 }
 
-void BuildPropertiesBlock(char** buffer, FileMetaData* meta,
-                          const std::shared_ptr<TableBuilderOptions>& tboptions,
-                          size_t data_size, size_t index_size,
-                          MetaIndexBuilder* metaIndexBuilder,
-                          size_t& new_offset, TableProperties* props) {
+[[maybe_unused]] void BuildPropertiesBlock(
+    char** buffer, FileMetaData* meta,
+    const std::shared_ptr<TableBuilderOptions>& tboptions, size_t data_size,
+    size_t index_size, MetaIndexBuilder* metaIndexBuilder, size_t& new_offset,
+    TableProperties* props) {
   BlockHandle properties_block_handle;
   PropertyBlockBuilder propertyBlockBuilder;
 
@@ -347,48 +351,48 @@ void BuildPropertiesBlock(char** buffer, FileMetaData* meta,
   metaIndexBuilder->Add(*properties_block_meta, properties_block_handle);
 }
 
-void GPUBuildPropertiesBlock(char** buffer_d, FileMetaData& meta,
-                             std::shared_ptr<TableBuilderOptions>& tboptions,
-                             size_t data_size, size_t index_size,
-                             MetaIndexBuilder* metaIndexBuilder,
-                             size_t& new_offset, TableProperties& props) {
+void GPUBuildPropertiesBlock(
+    char** buffer_d, FileMetaData* meta,
+    const std::shared_ptr<TableBuilderOptions>& tboptions, size_t data_size,
+    size_t index_size, MetaIndexBuilder* metaIndexBuilder, size_t& new_offset,
+    TableProperties* props) {
   BlockHandle properties_block_handle;
   PropertyBlockBuilder propertyBlockBuilder;
 
-  props.orig_file_number = tboptions->cur_file_num;
-  props.data_size = data_size;
-  props.raw_key_size = meta.raw_key_size;
-  props.raw_value_size = meta.raw_value_size;
-  props.num_data_blocks = meta.num_data_blocks;
-  props.num_entries = meta.num_entries;
-  props.filter_policy_name = "";
-  props.index_size = index_size;
+  props->orig_file_number = tboptions->cur_file_num;
+  props->data_size = data_size;
+  props->raw_key_size = meta->raw_key_size;
+  props->raw_value_size = meta->raw_value_size;
+  props->num_data_blocks = meta->num_data_blocks;
+  props->num_entries = meta->num_entries;
+  props->filter_policy_name = "";
+  props->index_size = index_size;
 
-  props.creation_time = meta.file_creation_time;
-  props.oldest_key_time = meta.oldest_ancester_time;
-  props.file_creation_time = meta.file_creation_time;
+  props->creation_time = meta->file_creation_time;
+  props->oldest_key_time = meta->oldest_ancester_time;
+  props->file_creation_time = meta->file_creation_time;
 
-  props.db_id = tboptions->db_id;
-  props.db_session_id = tboptions->db_session_id;
+  props->db_id = tboptions->db_id;
+  props->db_session_id = tboptions->db_session_id;
 
-  props.filter_policy_name = "";
-  props.compression_name = "NoCompression";
-  props.compression_options =
+  props->filter_policy_name = "";
+  props->compression_name = "NoCompression";
+  props->compression_options =
       "window_bits=-14; level=32767; strategy=0; max_dict_bytes=0; "
       "zstd_max_train_bytes=0; enabled=0; max_dict_buffer_bytes=0; "
       "use_zstd_dict_trainer=1;";
-  props.comparator_name = "leveldb.BytewiseComparator";
-  props.merge_operator_name = "nullptr";
-  props.prefix_extractor_name = "nullptr";
-  props.property_collectors_names = "[]";
-  props.index_key_is_user_key = 1;
-  props.index_value_is_delta_encoded = 1;
+  props->comparator_name = "leveldb.BytewiseComparator";
+  props->merge_operator_name = "nullptr";
+  props->prefix_extractor_name = "nullptr";
+  props->property_collectors_names = "[]";
+  props->index_key_is_user_key = 1;
+  props->index_value_is_delta_encoded = 1;
 
-  props.db_host_id = "jxx";
-  props.column_family_id = tboptions->column_family_id;
-  props.column_family_name = tboptions->column_family_name;
+  props->db_host_id = "jxx";
+  props->column_family_id = tboptions->column_family_id;
+  props->column_family_name = tboptions->column_family_name;
 
-  propertyBlockBuilder.AddTableProperty(props);
+  propertyBlockBuilder.AddTableProperty(*props);
 
   std::map<std::string, std::string> user_collected_properties;
 
@@ -412,9 +416,11 @@ void GPUBuildPropertiesBlock(char** buffer_d, FileMetaData& meta,
   metaIndexBuilder->Add(*properties_block_meta, properties_block_handle);
 }
 
-void BuildMetaIndexBlock(char** buffer, MetaIndexBuilder* metaIndexBuilder,
-                         BlockHandle* meta_index_block_handle,
-                         size_t last_offset, size_t& new_offset) {
+[[maybe_unused]] void BuildMetaIndexBlock(char** buffer,
+                                          MetaIndexBuilder* metaIndexBuilder,
+                                          BlockHandle* meta_index_block_handle,
+                                          size_t last_offset,
+                                          size_t& new_offset) {
   Slice block_data = metaIndexBuilder->Finish();
 
   WriteBlock(buffer, block_data, meta_index_block_handle, last_offset,
@@ -430,37 +436,15 @@ void GPUBuildMetaIndexBlock(char** buffer_d, MetaIndexBuilder* metaIndexBuilder,
                 new_offset);
 }
 
-__global__ void BuilderFooterKernel(char* buffer_d, size_t index_block_offset,
-                                    size_t index_block_size,
-                                    size_t meta_index_offset,
-                                    size_t meta_index_size, char checksum_type,
-                                    uint32_t format_version,
-                                    uint64_t magic_number) {
-  char* part2;
-  char* part3;
-
-  // part 1
-  *(buffer_d++) = checksum_type;
-  // part2
-  part2 = buffer_d;
-  // skip over part 2
-  buffer_d += 40;
-  // part 3
-  part3 = buffer_d;
-  GPUEncodeFixed32(buffer_d, format_version);
-  buffer_d += 4;
-  GPUEncodeFixed64(buffer_d, magic_number);
-  {
-    char* cur = part2;
-    cur = GPUEncodeTo(cur, meta_index_offset, meta_index_size);
-    cur = GPUEncodeTo(cur, index_block_offset, index_block_size);
-    memset(cur, char{0}, static_cast<size_t>(part3 - cur));
-  }
+__global__ void BuilderFooterKernel([[maybe_unused]] char* buffer_d,
+                                    char* footer_d, size_t footer_size) {
+  memcpy(buffer_d, footer_d, footer_size);
 }
 
-void BuildFooter(char** buffer, BlockHandle& index_block_handle,
-                 BlockHandle& meta_index_block_handle, size_t last_offset,
-                 size_t& new_offset) {
+[[maybe_unused]] void BuildFooter(char** buffer,
+                                  BlockHandle& index_block_handle,
+                                  BlockHandle& meta_index_block_handle,
+                                  size_t last_offset, size_t& new_offset) {
   FooterBuilder footer;
   footer.Build(kBlockBasedTableMagicNumber, 5, last_offset, kCRC32c,
                meta_index_block_handle, index_block_handle);
@@ -473,12 +457,20 @@ void BuildFooter(char** buffer, BlockHandle& index_block_handle,
 void GPUBuildFooter(char** buffer_d, BlockHandle& index_block_handle,
                     BlockHandle& meta_index_block_handle, size_t last_offset,
                     size_t& new_offset) {
-  BuilderFooterKernel<<<1, 1>>>(
-      *buffer_d, index_block_handle.offset(), index_block_handle.size(),
-      meta_index_block_handle.offset(), meta_index_block_handle.size(), kCRC32c,
-      5, kBlockBasedTableMagicNumber);
+  FooterBuilder footer;
+  footer.Build(kBlockBasedTableMagicNumber, 5, last_offset, kCRC32c,
+               meta_index_block_handle, index_block_handle);
 
-  new_offset = last_offset + 53;
+  char* footer_d;
+  cudaMalloc(&footer_d, footer.GetSlice().size());
+  cudaMemcpy(footer_d, footer.GetSlice().data(), footer.GetSlice().size(),
+             cudaMemcpyHostToDevice);
+
+  BuilderFooterKernel<<<1, 1>>>(*buffer_d, footer_d, footer.GetSlice().size());
+
+  new_offset = last_offset + footer.GetSlice().size();
+
+  cudaFree(footer_d);
 }
 
 char* BuildSSTable(const GPUKeyValue* keyValues, InputFile* inputFiles_d,
@@ -645,8 +637,9 @@ char* BuildSSTable(const GPUKeyValue* keyValues, InputFile* inputFiles_d,
 
   new_buffer_d += size_index_block;
 
-  GPUBuildPropertiesBlock(&new_buffer_d, meta, tboptions, data_buffer_size,
-                          size_index_block, &metaIndexBuilder, new_offset, tp);
+  //  GPUBuildPropertiesBlock(&new_buffer_d, meta, tboptions, data_buffer_size,
+  //                          size_index_block, &metaIndexBuilder, new_offset,
+  //                          tp);
 
   size_t props_size = new_offset - data_buffer_size - size_index_block;
   new_buffer_d += props_size;
@@ -910,35 +903,34 @@ __global__ void BuildIndexBlockLastFileKernel(
 __device__ void BeginComputeChecksum(char* current_buffer,
                                      size_t num_data_block,
                                      size_t index_block_size) {
-  GPUPutFixed32(current_buffer, num_data_block);
+  GPUPutFixed32(current_buffer - 9, num_data_block);
 
   char trailer[5];
   char type = 0x0;
   trailer[0] = type;
   uint32_t checksum = GPUComputeBuiltinChecksumWithLastByte(
-      current_buffer + 9 - index_block_size, index_block_size - 5, type);
+      current_buffer - index_block_size, index_block_size - 5, type);
   GPUEncodeFixed32(trailer + 1, checksum);
 
-  memcpy(current_buffer + 4, trailer, 5);
+  memcpy(current_buffer - 5, trailer, 5);
 }
 
-[[maybe_unused]] __global__ void ComputeChecksumFrontFileKernel(
-    char* buffer_d) {
+__global__ void ComputeChecksumFrontFileKernel(char* buffer_d) {
   uint32_t file_idx = threadIdx.x;
 
   char* current_buffer =
-      buffer_d + file_idx * size_front_file_d + data_size_d + index_size_d - 9;
+      buffer_d + file_idx * size_front_file_d + data_size_d + index_size_d;
 
   BeginComputeChecksum(current_buffer, num_data_block_d, index_size_d);
 }
 
-[[maybe_unused]] __global__ void ComputeChecksumLastFileKernel(
-    char* buffer_d, size_t num_data_block_last_file,
-    size_t index_size_last_file) {
+__global__ void ComputeChecksumLastFileKernel(char* buffer_d,
+                                              size_t num_data_block_last_file,
+                                              size_t index_size_last_file) {
   uint32_t file_idx = num_outputs_d - 1;
 
   char* current_buffer = buffer_d + file_idx * size_front_file_d +
-                         data_size_last_file_d + index_size_last_file - 9;
+                         data_size_last_file_d + index_size_last_file;
 
   BeginComputeChecksum(current_buffer, num_data_block_last_file,
                        index_size_last_file);
@@ -999,9 +991,8 @@ void BuildIndexBlocks(char** buffer_d, char* index_keys_d,
         *buffer_d, index_keys_d, block_handles_d,
         restarts_for_index_front_file_d);
 
-    // Checksum不在这里计算，将在WriteSSTable完成计算
-    //    ComputeChecksumFrontFileKernel<<<1, num_outputs - 1, 0, stream[5]>>>(
-    //        *buffer_d);
+    ComputeChecksumFrontFileKernel<<<1, num_outputs - 1, 0, stream[6]>>>(
+        *buffer_d);
   }
 
   dim3 block(1);
@@ -1014,11 +1005,12 @@ void BuildIndexBlocks(char** buffer_d, char* index_keys_d,
   BuildIndexBlockLastFileKernel<<<grid, block, 0, stream[7]>>>(
       *buffer_d, index_keys_d, block_handles_d, restarts_for_index_last_file_d,
       num_data_block_last_file);
-  //  ComputeChecksumLastFileKernel<<<1, 1, 0, stream[5]>>>(
-  //      *buffer_d, num_data_block_last_file, index_size_last_file);
+
+  ComputeChecksumLastFileKernel<<<1, 1, 0, stream[7]>>>(
+      *buffer_d, num_data_block_last_file, index_size_last_file);
 }
 
-void WriteSSTable(char* buffer, CompactionJob* compaction_job,
+void WriteSSTable(char* buffer_d, CompactionJob* compaction_job,
                   const Compaction* compact,
                   const std::shared_ptr<WritableFileWriter>& file_writer,
                   const std::shared_ptr<TableBuilderOptions>& tbs,
@@ -1032,23 +1024,20 @@ void WriteSSTable(char* buffer, CompactionJob* compaction_job,
   BlockHandle meta_index_block_handle, index_block_handle;
   MetaIndexBuilder meta_index_builder;
 
-  char* new_buffer = buffer + data_size + index_size;
-
-  // 计算每个文件索引块的checksum
-  ComputeChecksum(new_buffer, info->num_data_block, index_size);
+  char* new_buffer = buffer_d + data_size + index_size;
 
   size_t new_offset;
 
-  BuildPropertiesBlock(&new_buffer, meta, tbs, data_size, index_size,
-                       &meta_index_builder, new_offset, tp);
+  GPUBuildPropertiesBlock(&new_buffer, meta, tbs, data_size, index_size,
+                          &meta_index_builder, new_offset, tp);
 
   size_t props_size = new_offset - data_size - index_size;
   new_buffer += props_size;
 
   size_t last_offset = new_offset;
 
-  BuildMetaIndexBlock(&new_buffer, &meta_index_builder,
-                      &meta_index_block_handle, last_offset, new_offset);
+  GPUBuildMetaIndexBlock(&new_buffer, &meta_index_builder,
+                         &meta_index_block_handle, last_offset, new_offset);
 
   index_block_handle.set_offset(data_size);
   index_block_handle.set_size(index_size - 5);
@@ -1058,21 +1047,36 @@ void WriteSSTable(char* buffer, CompactionJob* compaction_job,
 
   last_offset = new_offset;
 
-  BuildFooter(&new_buffer, index_block_handle, meta_index_block_handle,
-              last_offset, new_offset);
+  GPUBuildFooter(&new_buffer, index_block_handle, meta_index_block_handle,
+                 last_offset, new_offset);
 
   info->file_size = new_offset;
 
-  auto start_time = std::chrono::high_resolution_clock::now();
+//  auto start_time = std::chrono::high_resolution_clock::now();
 
-  file_writer->Append(Slice(buffer, new_offset));
   compaction_job->MyFinishCompactionOutputFile(compact, file_writer, meta, info,
                                                tp);
 
-  auto end_time = std::chrono::high_resolution_clock::now();
-  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-      end_time - start_time);
-  //  std::cout << "append time: " << duration.count() << " us\n";
+  std::string filename = file_writer->file_name();
+
+  int fd = open(filename.c_str(), O_CREAT | O_RDWR | O_DIRECT, 0664);
+
+  CUfileDescr_t descr;
+  descr.handle.fd = fd;
+  descr.type = CU_FILE_HANDLE_TYPE_OPAQUE_FD;
+
+  CUfileHandle_t handle;
+  cuFileHandleRegister(&handle, &descr);
+
+  cuFileWrite(handle, buffer_d, new_offset, 0, 0);
+
+  cuFileHandleDeregister(handle);
+  close(fd);
+
+//  auto end_time = std::chrono::high_resolution_clock::now();
+//  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
+//      end_time - start_time);
+//  std::cout << "Write time: " << duration.count() << " us\n";
 }
 
 void BuildSSTables(
@@ -1166,11 +1170,6 @@ void BuildSSTables(
       (num_outputs - 1) * num_data_block_front_file + num_data_block_last_file;
 
   // 申请主机内存
-  // 使用内存对齐，提高内存传输效率
-  char* all_files_buffer;  // 所有SSTable的buffer
-  cudaHostAlloc((void**)&all_files_buffer, total_estimate_file_size,
-                cudaHostAllocWriteCombined);
-
   // 非最后一个数据块的restarts
   auto* restarts = new uint32_t[num_restarts];
   for (uint32_t i = 0; i < num_restarts; ++i) {
@@ -1240,7 +1239,7 @@ void BuildSSTables(
       num_restarts_last_data_block_last_file * sizeof(uint32_t),
       cudaMemcpyHostToDevice, stream[3]));
 
-  for(size_t i = 3; i < 8; i++) {
+  for (size_t i = 3; i < 8; i++) {
     CHECK(cudaStreamSynchronize(stream[i]));
   }
 
@@ -1266,7 +1265,7 @@ void BuildSSTables(
                    size_incomplete_data_block, restarts_for_index_front_file_d,
                    restarts_for_index_last_file_d, stream);
 
-  for(size_t i = 3; i < 8; i++) {
+  for (size_t i = 3; i < 8; i++) {
     CHECK(cudaStreamSynchronize(stream[i]));
   }
 
@@ -1276,13 +1275,7 @@ void BuildSSTables(
 
   gpu_stats.gpu_all_micros += duration.count();
 
-  CHECK(cudaMemcpyAsync(all_files_buffer, all_files_buffer_d,
-                        total_estimate_file_size, cudaMemcpyDeviceToHost,
-                        stream[3]));
-
-  CHECK(cudaStreamSynchronize(stream[3]));
-
-  mutex_for_gpu_compaction.unlock();
+//  mutex_for_gpu_compaction.unlock();
 
   // 写SSTable
   // 方法1
@@ -1329,7 +1322,7 @@ void BuildSSTables(
   thread_pool_for_gpu.reserve(num_outputs - 1);
 
   for (size_t i = 0; i < num_outputs - 1; ++i) {
-    char* current_file_buffer = all_files_buffer + estimate_file_size * i;
+    char* current_file_buffer = all_files_buffer_d + estimate_file_size * i;
     thread_pool_for_gpu.emplace_back(&WriteSSTable, current_file_buffer,
                                      compaction_job, compact, file_writes[i],
                                      tbs[i], &metas[i], &tps[i], &infos[i],
@@ -1337,7 +1330,7 @@ void BuildSSTables(
   }
 
   char* current_file_buffer =
-      all_files_buffer + estimate_file_size * (num_outputs - 1);
+      all_files_buffer_d + estimate_file_size * (num_outputs - 1);
   WriteSSTable(current_file_buffer, compaction_job, compact,
                file_writes[num_outputs - 1], tbs[num_outputs - 1],
                &metas[num_outputs - 1], &tps[num_outputs - 1],
@@ -1378,30 +1371,14 @@ void BuildSSTables(
                data_size_last_file, index_size_last_file);*/
 
   // 方法4
-  std::vector<std::thread> thread_pool;
-  thread_pool.reserve(1);
-  if (num_outputs > 1) {
-    thread_pool.emplace_back([&all_files_buffer, &num_outputs,
-                              &estimate_file_size, &compaction_job, &compact,
-                              &file_writes, &tbs, &metas, &tps, &infos,
-                              &data_size, &index_size] {
-      for (size_t i = 0; i < num_outputs / 2; ++i) {
-        char* current_file_buffer = all_files_buffer + estimate_file_size * i;
-        WriteSSTable(current_file_buffer, compaction_job, compact,
-                     file_writes[i], tbs[i], &metas[i], &tps[i], &infos[i],
-                     data_size, index_size);
-      }
-    });
-  }
-
-  for (size_t i = num_outputs / 2; i < num_outputs - 1; ++i) {
-    char* current_file_buffer = all_files_buffer + estimate_file_size * i;
+  for (size_t i = 0; i < num_outputs - 1; ++i) {
+    char* current_file_buffer = all_files_buffer_d + estimate_file_size * i;
     WriteSSTable(current_file_buffer, compaction_job, compact, file_writes[i],
                  tbs[i], &metas[i], &tps[i], &infos[i], data_size, index_size);
   }
 
   char* current_file_buffer =
-      all_files_buffer + estimate_file_size * (num_outputs - 1);
+      all_files_buffer_d + estimate_file_size * (num_outputs - 1);
   WriteSSTable(current_file_buffer, compaction_job, compact,
                file_writes[num_outputs - 1], tbs[num_outputs - 1],
                &metas[num_outputs - 1], &tps[num_outputs - 1],
@@ -1420,10 +1397,9 @@ void BuildSSTables(
   delete[] restarts;
   delete[] restarts_last_data_block_last_file;
 
-  for (auto& thread : thread_pool) {
+  /*for (auto& thread : thread_pool_for_gpu) {
     thread.join();
-  }
-  cudaFreeHost(all_files_buffer);
+  }*/
 }
 
 }  // namespace ROCKSDB_NAMESPACE

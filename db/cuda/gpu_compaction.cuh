@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cufile.h>
 #include <driver_types.h>
 #include <snappy.h>
 #include <sys/time.h>
@@ -35,6 +36,40 @@ namespace ROCKSDB_NAMESPACE {
 
 class CompactionJob;
 
+struct MaxSequence {
+  __host__ __device__ bool operator()(const GPUKeyValue& a,
+                                      const GPUKeyValue& b) {
+    return a.sequence < b.sequence;
+  }
+};
+
+void MallocInputFiles(InputFile** input_files_d, size_t num_file);
+
+__global__ inline void SetInputFile(InputFile* inputFile_d, size_t level,
+                                    char* file_d, size_t file_size,
+                                    uint64_t file_number,
+                                    uint64_t num_data_blocks,
+                                    uint64_t num_entries) {
+  inputFile_d->level = level;
+  inputFile_d->file = file_d;
+  inputFile_d->file_size = file_size;
+  inputFile_d->file_number = file_number;
+  inputFile_d->num_data_blocks = num_data_blocks;
+  inputFile_d->num_entries = num_entries;
+}
+
+__global__ void PrepareOutputKernel(SSTableInfo* info_d, size_t info_size,
+                                    GPUKeyValue* result_d, char* largest_key_d,
+                                    char* smallest_key_d);
+
+void PrepareOutput(SSTableInfo* info, size_t info_size, GPUKeyValue* result_d,
+                   char* largest_key, char* smallest_key,
+                   uint64_t* largest_seqno, uint64_t* smallest_seqno,
+                   cudaStream_t* stream);
+
+void AddInputFile(size_t level, const std::string& filename, FileMetaData* meta,
+                  InputFile* input_file_d);
+
 void CreateStream(cudaStream_t* stream, size_t stream_size);
 void DestroyStream(cudaStream_t* stream, size_t stream_size);
 
@@ -46,9 +81,8 @@ void DestroyStream(cudaStream_t* stream, size_t stream_size);
  *
  * @return
  */
-GPUKeyValue* DecodeAndSort(const InputFile* inputFiles, size_t num_inputs,
-                           InputFile** inputFiles_d, size_t num_kv_data_block,
-                           GPUKeyValue** result_h, size_t& sorted_size,
+GPUKeyValue* DecodeAndSort(size_t num_inputs, InputFile* inputFiles_d,
+                           size_t num_kv_data_block, size_t& sorted_size,
                            cudaStream_t* stream);
 
 /**
@@ -121,6 +155,6 @@ void ReleaseSource(GPUKeyValue** key_value_h);
  * @param inputFiles_d
  * @param num_inputs
  */
-void ReleaseSource(InputFile** inputFiles_d, size_t num_inputs);
+void ReleaseSource(InputFile* inputFiles_d, size_t num_inputs);
 
 }  // namespace ROCKSDB_NAMESPACE

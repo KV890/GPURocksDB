@@ -8574,8 +8574,12 @@ int db_bench_tool(int argc, char** argv) {
     exit(1);
   }
 
+  gpu_stats.OpenCuFileDriver();
+
   ROCKSDB_NAMESPACE::Benchmark benchmark;
   benchmark.Run();
+
+  gpu_stats.CloseCuFileDriver();
 
   if (FLAGS_print_malloc_stats) {
     std::string stats_string;

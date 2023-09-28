@@ -65,10 +65,6 @@ struct InputFile {
         num_data_blocks(0),
         num_entries(0) {}
 
-  ~InputFile() {
-    delete[] file;  // 释放 file_char 内存
-  }
-
   size_t level;
   char* file;
   size_t file_size;

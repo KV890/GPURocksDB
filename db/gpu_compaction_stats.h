@@ -18,6 +18,10 @@ class GPUCompactionStats {
 
   void ResetStats();
 
+  void OpenCuFileDriver();
+
+  void CloseCuFileDriver();
+
   uint64_t cpu_all_micros;
 
   uint64_t gpu_total_input_bytes;

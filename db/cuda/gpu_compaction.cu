@@ -1,6 +1,129 @@
+#include <fcntl.h>
+#include <thrust/extrema.h>
+#include <thrust/sort.h>
+
+#include <csignal>
+
 #include "gpu_compaction.cuh"
 
 namespace ROCKSDB_NAMESPACE {
+
+void MallocInputFiles(InputFile** input_files_d, size_t num_file) {
+  cudaMalloc(input_files_d, num_file * sizeof(InputFile));
+}
+
+void AddInputFile(size_t level, const std::string& filename, FileMetaData* meta,
+                  InputFile* input_file_d) {
+  int fd = open(filename.c_str(), O_CREAT | O_RDWR | O_DIRECT, 0664);
+
+  CUfileDescr_t descr;
+  descr.handle.fd = fd;
+  descr.type = CU_FILE_HANDLE_TYPE_OPAQUE_FD;
+
+  CUfileHandle_t handle;
+  cuFileHandleRegister(&handle, &descr);
+
+  size_t file_size = meta->fd.file_size;
+  char* file_d;
+  cudaMalloc((void**)&file_d, file_size);
+
+  cuFileBufRegister(file_d, file_size, 0);
+
+  cuFileRead(handle, file_d, file_size, 0, 0);
+
+  cuFileHandleDeregister(handle);
+  close(fd);
+
+  SetInputFile<<<1, 1>>>(input_file_d, level, file_d, file_size,
+                         meta->fd.GetNumber(), meta->num_data_blocks,
+                         meta->num_entries);
+}
+
+__global__ void PrepareOutputKernel(SSTableInfo* info_d, size_t info_size,
+                                    GPUKeyValue* result_d, char* largest_key_d,
+                                    char* smallest_key_d) {
+  uint32_t tid = threadIdx.x;
+  if (tid >= info_size) return;
+
+  size_t curr_pos_first_key = 0;
+  for (uint32_t i = 0; i < tid; ++i) {
+    curr_pos_first_key += info_d[i].total_num_kv;
+  }
+
+  size_t curr_pos_last_key = curr_pos_first_key + info_d[tid].total_num_kv - 1;
+
+  memcpy(largest_key_d + tid * (keySize_ + 8), result_d[curr_pos_last_key].key,
+         keySize_ + 8);
+  memcpy(smallest_key_d + tid * (keySize_ + 8),
+         result_d[curr_pos_first_key].key, keySize_ + 8);
+}
+
+void PrepareOutput(SSTableInfo* info, size_t info_size, GPUKeyValue* result_d,
+                   char* largest_key, char* smallest_key,
+                   uint64_t* largest_seqno, uint64_t* smallest_seqno,
+                   cudaStream_t* stream) {
+  size_t current_num_kv = 0;
+
+  GPUKeyValue max_key;
+  GPUKeyValue min_key;
+  GPUKeyValue max_element;
+  GPUKeyValue min_element;
+  for (size_t i = 0; i < info_size; ++i) {
+    cudaMemcpyAsync(&max_key,
+                    result_d + current_num_kv + info[i].total_num_kv - 1,
+                    sizeof(GPUKeyValue), cudaMemcpyDeviceToHost, stream[0]);
+    cudaMemcpyAsync(&min_key, result_d + current_num_kv, sizeof(GPUKeyValue),
+                    cudaMemcpyDeviceToHost, stream[0]);
+
+    memcpy(largest_key + i * (keySize_ + 8), max_key.key, keySize_ + 8);
+    memcpy(smallest_key + i * (keySize_ + 8), min_key.key, keySize_ + 8);
+
+    thrust::sort(thrust::device, result_d + current_num_kv,
+                 result_d + current_num_kv + info[i].total_num_kv,
+                 MaxSequence());
+
+    cudaMemcpyAsync(&max_element,
+                    result_d + current_num_kv + info[i].total_num_kv - 1,
+                    sizeof(GPUKeyValue), cudaMemcpyDeviceToHost, stream[1]);
+    cudaMemcpyAsync(&min_element, result_d + current_num_kv,
+                    sizeof(GPUKeyValue), cudaMemcpyDeviceToHost, stream[1]);
+
+    largest_seqno[i] = max_element.sequence;
+    smallest_seqno[i] = min_element.sequence;
+
+    current_num_kv += info[i].total_num_kv;
+  }
+}
+
+void ReadFile(std::string filename) {
+  void* devPtr = nullptr;
+  const size_t size = 128 * 1024;
+  CUfileHandle_t cf_handle;
+
+  int fd = open(filename.c_str(), O_CREAT | O_RDWR | O_DIRECT, 0664);
+
+  CUfileDescr_t cf_descr;
+  memset((void*)&cf_descr, 0, sizeof(CUfileDescr_t));
+  cf_descr.handle.fd = fd;
+  cf_descr.type = CU_FILE_HANDLE_TYPE_OPAQUE_FD;
+
+  cuFileHandleRegister(&cf_handle, &cf_descr);
+
+  cudaMalloc(&devPtr, size);
+  cudaMemset((void*)(devPtr), 0, size);
+  cudaStreamSynchronize(nullptr);
+
+  cuFileBufRegister(devPtr, size, 0);
+
+  cuFileWrite(cf_handle, devPtr, size, 0, 0);
+
+  cuFileBufDeregister(devPtr);
+
+  cudaFree(devPtr);
+
+  cuFileHandleDeregister(cf_handle);
+  close(fd);
+}
 
 void CreateStream(cudaStream_t* stream, size_t stream_size) {
   for (size_t i = 0; i < stream_size; ++i) {
@@ -14,38 +137,20 @@ void DestroyStream(cudaStream_t* stream, size_t stream_size) {
   }
 }
 
-GPUKeyValue* DecodeAndSort(const InputFile* inputFiles, size_t num_inputs,
-                           InputFile** inputFiles_d, size_t num_kv_data_block,
-                           GPUKeyValue** result_h, size_t& sorted_size,
+GPUKeyValue* DecodeAndSort(size_t num_inputs, InputFile* inputFiles_d,
+                           size_t num_kv_data_block, size_t& sorted_size,
                            cudaStream_t* stream) {
-  //  cudaEvent_t start, end;
-  //  cudaEventCreate(&start);
-  //  cudaEventCreate(&end);
-  //  float elapsed_time;
-
   // 记录整个解析SSTable的时间
-//  auto start_time = std::chrono::high_resolution_clock::now();
-  GPUKeyValue* result_d = GetAndSort(inputFiles, num_inputs, inputFiles_d,
+  //  auto start_time = std::chrono::high_resolution_clock::now();
+
+  GPUKeyValue* result_d = GetAndSort(num_inputs, inputFiles_d,
                                      num_kv_data_block, sorted_size, stream);
 
-  cudaHostAlloc((void**)result_h, sorted_size * sizeof(GPUKeyValue),
-                cudaHostAllocDefault);
-//  cudaEventRecord(start, nullptr);
-  cudaMemcpyAsync(*result_h, result_d, sorted_size * sizeof(GPUKeyValue),
-                  cudaMemcpyDeviceToHost, stream[0]);
-
-  cudaStreamSynchronize(stream[0]);
-
-//  cudaEventRecord(end, nullptr);
-//  cudaEventSynchronize(end);
-//  cudaEventElapsedTime(&elapsed_time, start, end);
-//  gpu_stats.transmission_time += elapsed_time;
-
-//  auto end_time = std::chrono::high_resolution_clock::now();
-//  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-//      end_time - start_time);
-//  std::cout << "GPU decode and sort time: " << duration.count() << " us"
-//            << std::endl;
+  //  auto end_time = std::chrono::high_resolution_clock::now();
+  //  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
+  //      end_time - start_time);
+  //  std::cout << "GPU decode and sort time: " << duration.count() << " us"
+  //            << std::endl;
 
   return result_d;
 }
@@ -146,21 +251,26 @@ void EncodeSSTables(
   auto end_time = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
       end_time - start_time);
-//  std::cout << "GPU Encode SSTable time: " << duration.count() << " us\n";
-//  printf("---------------------\n");
+  //  std::cout << "GPU Encode SSTable time: " << duration.count() << " us\n";
+  //  printf("---------------------\n");
 }
 
 void ReleaseDevPtr(char** blocks_buffer_d) { cudaFreeHost(*blocks_buffer_d); }
 
 void ReleaseSource(GPUKeyValue** key_value_h) { cudaFreeHost(*key_value_h); }
 
-void ReleaseSource(InputFile** inputFiles_d, size_t num_inputs) {
+// 重点
+void ReleaseSource(InputFile* inputFiles_d, size_t num_inputs) {
+  InputFile inputFiles_h;
+
   for (size_t i = 0; i < num_inputs; ++i) {
-    const char* file_host;
-    cudaMemcpy(&file_host, &((*inputFiles_d)[i].file), sizeof(char*),
+    cudaMemcpy(&inputFiles_h, inputFiles_d + i, sizeof(InputFile),
                cudaMemcpyDeviceToHost);
-    cudaFree((void*)file_host);
+
+    cuFileBufDeregister(inputFiles_h.file);
+    cudaFree(inputFiles_h.file);
   }
+
   cudaFree(inputFiles_d);
 }
 

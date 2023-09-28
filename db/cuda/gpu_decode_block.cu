@@ -6,14 +6,17 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-__global__ void SetInputFies(InputFile* inputFile, size_t level,
-                             size_t file_size, uint64_t file_number,
-                             uint64_t num_data_blocks, uint64_t num_entries) {
-  inputFile->level = level;
-  inputFile->file_size = file_size;
-  inputFile->file_number = file_number;
-  inputFile->num_data_blocks = num_data_blocks;
-  inputFile->num_entries = num_entries;
+__global__ void PrepareDecode(InputFile* inputFiles_d, size_t num_file,
+                              uint64_t* all_num_kv_d,
+                              size_t* max_num_data_block_d) {
+  for (size_t i = 0; i < num_file; ++i) {
+    uint64_t num_kv = inputFiles_d[i].num_entries;
+    *all_num_kv_d += num_kv;
+
+    if (*max_num_data_block_d < inputFiles_d[i].num_data_blocks) {
+      *max_num_data_block_d = inputFiles_d[i].num_data_blocks;
+    }
+  }
 }
 
 __global__ void DecodeFootersKernel(InputFile* inputFiles,
@@ -35,7 +38,8 @@ __global__ void DecodeFootersKernel(InputFile* inputFiles,
 
 __global__ void ComputeRestartsKernel(InputFile* inputFiles,
                                       GPUBlockHandle* footer,
-                                      uint32_t* restarts) {
+                                      uint32_t* restarts,
+                                      uint64_t max_num_data_block_d) {
   unsigned int file_idx = threadIdx.x;
   unsigned int block_idx = blockIdx.x;
 
@@ -52,7 +56,8 @@ __global__ void ComputeRestartsKernel(InputFile* inputFiles,
 __global__ void DecodeIndexBlocksKernel(InputFile* inputFiles,
                                         const uint32_t* restarts,
                                         GPUBlockHandle* footer,
-                                        GPUBlockHandle* index_block) {
+                                        GPUBlockHandle* index_block,
+                                        uint64_t max_num_data_block_d) {
   unsigned int file_idx = threadIdx.x;
   unsigned int block_idx = blockIdx.x;
 
@@ -84,7 +89,8 @@ __global__ void DecodeIndexBlocksKernel(InputFile* inputFiles,
 __global__ void DecodeDataBlocksKernel(InputFile* inputFiles,
                                        uint32_t* global_count,
                                        GPUBlockHandle* index_block,
-                                       GPUKeyValue* keyValuePtr) {
+                                       GPUKeyValue* keyValuePtr,
+                                       uint64_t max_num_data_block_d) {
   unsigned int file_idx = threadIdx.x;
   unsigned int block_idx = blockIdx.x;
   //  unsigned int kv_idx = threadIdx.y;
@@ -98,10 +104,11 @@ __global__ void DecodeDataBlocksKernel(InputFile* inputFiles,
   auto file_start = reinterpret_cast<uint64_t>(inputFiles[file_idx].file);
 
   size_t num_kv;
-  if (block_idx < num_data_blocks_d[file_idx] - 1) {
+  if (block_idx < inputFiles[file_idx].num_data_blocks - 1) {
     num_kv = num_kv_data_block_d;
   } else {  // 最后一个数据块
-    num_kv = num_kv_last_data_blocks_d[file_idx];
+    num_kv = inputFiles[file_idx].num_entries -
+             num_kv_data_block_d * (inputFiles[file_idx].num_data_blocks - 1);
   }
 
   for (size_t i = 0; i < num_kv; ++i) {
@@ -159,74 +166,40 @@ __global__ void DecodeDataBlocksKernel(InputFile* inputFiles,
   }*/
 }
 
-GPUKeyValue* GetAndSort(const InputFile* inputFiles, size_t num_file,
-                        InputFile** inputFiles_d, size_t num_kv_data_block,
-                        size_t& sorted_size, cudaStream_t* stream) {
-  //  cudaEvent_t start, end;
-  //  cudaEventCreate(&start);
-  //  cudaEventCreate(&end);
-  //  float elapsed_time;
-
-  // 准备输入数据
-  // footer、索引块和数据块共有输入数据
-  cudaMallocAsync(inputFiles_d, num_file * sizeof(InputFile), stream[0]);
-
-  uint64_t all_num_kv = 0;
-  size_t max_num_data_block = 0;
-
-  auto* num_kv_last_data_blocks = new size_t[num_file];
-  auto* num_data_blocks = new size_t[num_file];
-
-  for (int i = 0; i < num_file; ++i) {
-    char* file_d;
-    CHECK(cudaMallocAsync(&file_d, inputFiles[i].file_size, stream[0]));
-
-    //    cudaEventRecord(start, nullptr);
-    CHECK(cudaMemcpyAsync(file_d, inputFiles[i].file, inputFiles[i].file_size,
-                          cudaMemcpyHostToDevice, stream[0]));
-
-    CHECK(cudaMemcpyAsync(&(*inputFiles_d)[i].file, &file_d, sizeof(char*),
-                          cudaMemcpyHostToDevice, stream[0]));
-    //    cudaEventRecord(end, nullptr);
-    //    cudaEventSynchronize(end);
-    //    cudaEventElapsedTime(&elapsed_time, start, end);
-    //    gpu_stats.transmission_time += elapsed_time;
-
-    SetInputFies<<<1, 1, 0, stream[1]>>>(
-        &(*inputFiles_d)[i], inputFiles[i].level, inputFiles[i].file_size,
-        inputFiles[i].file_number, inputFiles[i].num_data_blocks,
-        inputFiles[i].num_entries);
-
-    uint64_t num_kv = inputFiles[i].num_entries;
-    all_num_kv += num_kv;
-
-    num_data_blocks[i] = inputFiles[i].num_data_blocks;
-    if (max_num_data_block < inputFiles[i].num_data_blocks) {
-      max_num_data_block = inputFiles[i].num_data_blocks;
-    }
-
-    num_kv_last_data_blocks[i] =
-        num_kv - num_kv_data_block * (inputFiles[i].num_data_blocks - 1);
-  }
-
-  //  cudaEventRecord(start, nullptr);
+GPUKeyValue* GetAndSort(size_t num_file, InputFile* inputFiles_d,
+                        size_t num_kv_data_block, size_t& sorted_size,
+                        cudaStream_t* stream) {
   cudaMemcpyToSymbolAsync(num_files_d, &num_file, sizeof(size_t), 0,
                           cudaMemcpyHostToDevice, stream[0]);
   cudaMemcpyToSymbolAsync(num_kv_data_block_d, &num_kv_data_block,
                           sizeof(size_t), 0, cudaMemcpyHostToDevice, stream[1]);
-  cudaMemcpyToSymbolAsync(max_num_data_block_d, &max_num_data_block,
-                          sizeof(size_t), 0, cudaMemcpyHostToDevice, stream[2]);
-  cudaMemcpyToSymbolAsync(num_data_blocks_d, num_data_blocks,
-                          num_file * sizeof(size_t), 0, cudaMemcpyHostToDevice,
-                          stream[0]);
-  cudaMemcpyToSymbolAsync(num_kv_last_data_blocks_d, num_kv_last_data_blocks,
-                          num_file * sizeof(size_t), 0, cudaMemcpyHostToDevice,
-                          stream[1]);
 
-  //  cudaEventRecord(end, nullptr);
-  //  cudaEventSynchronize(end);
-  //  cudaEventElapsedTime(&elapsed_time, start, end);
-  //  gpu_stats.transmission_time += elapsed_time;
+  // 准备输入数据
+  // footer、索引块和数据块共有输入数据
+  uint64_t* all_num_kv_d;
+  cudaMallocAsync(&all_num_kv_d, sizeof(uint64_t), stream[0]);
+  cudaMemsetAsync(all_num_kv_d, 0, sizeof(uint64_t), stream[0]);
+
+  size_t* max_num_data_block_d;
+  cudaMallocAsync(&max_num_data_block_d, sizeof(size_t), stream[1]);
+  cudaMemsetAsync(max_num_data_block_d, 0, sizeof(size_t), stream[1]);
+
+  for (size_t i = 0; i < 2; i++) {
+    CHECK(cudaStreamSynchronize(stream[i]));
+  }
+
+  PrepareDecode<<<1, 1, 0, stream[0]>>>(inputFiles_d, num_file, all_num_kv_d,
+                                        max_num_data_block_d);
+
+  cudaStreamSynchronize(stream[0]);
+
+  uint64_t all_num_kv;
+  cudaMemcpyAsync(&all_num_kv, all_num_kv_d, sizeof(uint64_t),
+                  cudaMemcpyDeviceToHost, stream[0]);
+
+  size_t max_num_data_block;
+  cudaMemcpyAsync(&max_num_data_block, max_num_data_block_d, sizeof(size_t),
+                  cudaMemcpyDeviceToHost, stream[1]);
 
   uint32_t* all_restarts_d;
   cudaMallocAsync(&all_restarts_d,
@@ -258,16 +231,18 @@ GPUKeyValue* GetAndSort(const InputFile* inputFiles, size_t num_file,
 
   auto start_time = std::chrono::high_resolution_clock::now();
 
-  DecodeFootersKernel<<<1, block, 0, stream[0]>>>(*inputFiles_d, footers_d);
+  DecodeFootersKernel<<<1, block, 0, stream[0]>>>(inputFiles_d, footers_d);
 
-  ComputeRestartsKernel<<<grid, block, 0, stream[0]>>>(*inputFiles_d, footers_d,
-                                                       all_restarts_d);
+  ComputeRestartsKernel<<<grid, block, 0, stream[0]>>>(
+      inputFiles_d, footers_d, all_restarts_d, max_num_data_block);
 
   DecodeIndexBlocksKernel<<<grid, block, 0, stream[0]>>>(
-      *inputFiles_d, all_restarts_d, footers_d, index_blocks_d);
+      inputFiles_d, all_restarts_d, footers_d, index_blocks_d,
+      max_num_data_block);
 
   DecodeDataBlocksKernel<<<grid, block, 0, stream[0]>>>(
-      *inputFiles_d, global_count, index_blocks_d, key_value_d);
+      inputFiles_d, global_count, index_blocks_d, key_value_d,
+      max_num_data_block);
 
   CHECK(cudaStreamSynchronize(stream[0]));
 
@@ -284,10 +259,8 @@ GPUKeyValue* GetAndSort(const InputFile* inputFiles, size_t num_file,
   cudaFree(index_blocks_d);
   cudaFree(footers_d);
   cudaFree(global_count);
-
-  // 释放 CPU 内存
-  delete[] num_kv_last_data_blocks;
-  delete[] num_data_blocks;
+  cudaFree(max_num_data_block_d);
+  cudaFree(all_num_kv_d);
 
   return key_value_d;
 }

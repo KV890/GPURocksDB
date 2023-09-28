@@ -265,20 +265,9 @@ __host__ __device__ inline void GPUParseInternalKey(const char* internal_key,
   type = c;
 }
 
-/**
- * 辅助核函数
- * 对变量进行赋值
- *
- * @param inputFile
- * @param level
- * @param file_size
- * @param file_number
- * @param num_data_blocks
- * @param num_entries
- */
-__global__ void SetInputFies(InputFile* inputFile, size_t level,
-                             size_t file_size, uint64_t file_number,
-                             uint64_t num_data_blocks, uint64_t num_entries);
+__global__ void PrepareDecode(InputFile* inputFiles_d, size_t num_file,
+                              uint64_t* all_num_kv_d,
+                              size_t* max_num_data_block_d);
 
 /**
  * GPU并行解码footer
@@ -298,7 +287,8 @@ __global__ void DecodeFootersKernel(InputFile* inputFiles,
  */
 __global__ void ComputeRestartsKernel(InputFile* inputFiles,
                                       GPUBlockHandle* footer,
-                                      uint32_t* restarts);
+                                      uint32_t* restarts,
+                                      uint64_t max_num_data_block_d);
 
 /**
  * GPU并行解析索引块核函数
@@ -311,7 +301,8 @@ __global__ void ComputeRestartsKernel(InputFile* inputFiles,
 __global__ void DecodeIndexBlocksKernel(InputFile* inputFiles,
                                         const uint32_t* restarts,
                                         GPUBlockHandle* footer,
-                                        GPUBlockHandle* index_block);
+                                        GPUBlockHandle* index_block,
+                                        uint64_t max_num_data_block_d);
 
 /**
  * GPU并行解析数据块核函数
@@ -324,7 +315,8 @@ __global__ void DecodeIndexBlocksKernel(InputFile* inputFiles,
 __global__ void DecodeDataBlocksKernel(InputFile* inputFiles,
                                        uint32_t* global_count,
                                        GPUBlockHandle* index_block,
-                                       GPUKeyValue* keyValuePtr);
+                                       GPUKeyValue* keyValuePtr,
+                                       uint64_t max_num_data_block_d);
 
 /**
  * GPU并行解析SSTable控制函数
@@ -334,8 +326,8 @@ __global__ void DecodeDataBlocksKernel(InputFile* inputFiles,
  * @param inputFiles_d
  * @return
  */
-GPUKeyValue* GetAndSort(const InputFile* inputFiles, size_t num_file,
-                        InputFile** inputFiles_d, size_t num_kv_data_block,
-                        size_t& sorted_size, cudaStream_t* stream);
+GPUKeyValue* GetAndSort(size_t num_file, InputFile* inputFiles_d,
+                        size_t num_kv_data_block, size_t& sorted_size,
+                        cudaStream_t* stream);
 
 }  // namespace ROCKSDB_NAMESPACE
