@@ -2328,20 +2328,6 @@ Status DB::Put(const WriteOptions& opt, ColumnFamilyHandle* column_family,
   }
 
   return Write(opt, &batch);
-
-  /*Status s = my_write_batch.MyPut(column_family, key, value);
-
-  if (my_write_batch.Count() < my_write_batch.batch_size) {
-    return s;
-  }
-
-  if (my_write_batch.Count() == my_write_batch.batch_size) {
-    s = Write(opt, &my_write_batch.total_batch);
-    my_write_batch.Clear();
-    return s;
-  }
-
-  return s;*/
 }
 
 Status DB::Put(const WriteOptions& opt, ColumnFamilyHandle* column_family,

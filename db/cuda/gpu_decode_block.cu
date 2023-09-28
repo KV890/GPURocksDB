@@ -89,6 +89,8 @@ __global__ void DecodeDataBlocksKernel(InputFile* inputFiles,
   unsigned int block_idx = blockIdx.x;
   //  unsigned int kv_idx = threadIdx.y;
 
+  uint32_t test = __match_any_sync(1, 1);
+
   if (block_idx >= inputFiles[file_idx].num_data_blocks) return;
 
   const char* current_data_block =
