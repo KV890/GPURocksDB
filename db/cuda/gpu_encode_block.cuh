@@ -219,6 +219,8 @@
     }                                                         \
   } while (0)
 
+#define MAX_OUTPUTS 1024
+
 namespace ROCKSDB_NAMESPACE {
 
 class CompactionJob;
@@ -525,11 +527,11 @@ void GPUWriteBlock(char** buffer_d, const Slice& block_contents,
  * @param new_offset
  * @param props
  */
-[[maybe_unused]] [[maybe_unused]] [[maybe_unused]] void BuildPropertiesBlock(char** buffer, FileMetaData* meta,
-                          const std::shared_ptr<TableBuilderOptions>& tboptions,
-                          size_t data_size, size_t index_size,
-                          MetaIndexBuilder* metaIndexBuilder,
-                          size_t& new_offset, TableProperties* props);
+[[maybe_unused]] void BuildPropertiesBlock(
+    char** buffer, FileMetaData* meta,
+    const std::shared_ptr<TableBuilderOptions>& tboptions, size_t data_size,
+    size_t index_size, MetaIndexBuilder* metaIndexBuilder, size_t& new_offset,
+    TableProperties* props);
 
 /**
  *
@@ -557,9 +559,10 @@ void GPUBuildPropertiesBlock(
  * @param last_offset
  * @param new_offset
  */
-[[maybe_unused]] [[maybe_unused]] [[maybe_unused]] void BuildMetaIndexBlock(char** buffer, MetaIndexBuilder* metaIndexBuilder,
-                         BlockHandle* meta_index_block_handle,
-                         size_t last_offset, size_t& new_offset);
+[[maybe_unused]] [[maybe_unused]] [[maybe_unused]] void BuildMetaIndexBlock(
+    char** buffer, MetaIndexBuilder* metaIndexBuilder,
+    BlockHandle* meta_index_block_handle, size_t last_offset,
+    size_t& new_offset);
 
 /**
  *
@@ -587,9 +590,10 @@ void GPUBuildMetaIndexBlock(char** buffer_d, MetaIndexBuilder* metaIndexBuilder,
 __global__ void BuilderFooterKernel(char* buffer_d, char* footer_d,
                                     size_t footer_size);
 
-[[maybe_unused]] [[maybe_unused]] [[maybe_unused]] void BuildFooter(char** buffer, BlockHandle& index_block_handle,
-                 BlockHandle& meta_index_block_handle, size_t last_offset,
-                 size_t& new_offset);
+[[maybe_unused]] [[maybe_unused]] [[maybe_unused]] void BuildFooter(
+    char** buffer, BlockHandle& index_block_handle,
+    BlockHandle& meta_index_block_handle, size_t last_offset,
+    size_t& new_offset);
 
 /**
  *

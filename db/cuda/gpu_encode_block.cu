@@ -1052,11 +1052,6 @@ void WriteSSTable(char* buffer_d, CompactionJob* compaction_job,
 
   info->file_size = new_offset;
 
-//  auto start_time = std::chrono::high_resolution_clock::now();
-
-  compaction_job->MyFinishCompactionOutputFile(compact, file_writer, meta, info,
-                                               tp);
-
   std::string filename = file_writer->file_name();
 
   int fd = open(filename.c_str(), O_CREAT | O_RDWR | O_DIRECT, 0664);
@@ -1073,10 +1068,8 @@ void WriteSSTable(char* buffer_d, CompactionJob* compaction_job,
   cuFileHandleDeregister(handle);
   close(fd);
 
-//  auto end_time = std::chrono::high_resolution_clock::now();
-//  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-//      end_time - start_time);
-//  std::cout << "Write time: " << duration.count() << " us\n";
+  compaction_job->MyFinishCompactionOutputFile(compact, file_writer, meta, info,
+                                               tp);
 }
 
 void BuildSSTables(

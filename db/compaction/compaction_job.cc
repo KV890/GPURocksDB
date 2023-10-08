@@ -2445,8 +2445,8 @@ Status CompactionJob::GPUCompaction(CompactionJob* compaction_job,
   }
 
   // 解码和排序
-  cudaStream_t stream[8];
-  CreateStream(stream, 8);
+  cudaStream_t stream[16];
+  CreateStream(stream, 16);
 
   size_t sorted_size;
 
@@ -2485,7 +2485,7 @@ Status CompactionJob::GPUCompaction(CompactionJob* compaction_job,
   EncodeSSTables(compaction_job, compact, result_d, input_files_d, infos, metas,
                  file_writers, tbs, tps, num_kv_data_block, stream);
 
-  DestroyStream(stream, 8);
+  DestroyStream(stream, 16);
   ReleaseSource(input_files_d, num_inputs);
 
   compaction_stats_.SetMicros(db_options_.clock->NowMicros() - start_micros);
