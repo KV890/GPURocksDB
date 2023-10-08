@@ -2056,9 +2056,7 @@ void CompactionJob::UpdateCompactionJobStats(
   compaction_job_stats_->num_output_files = stats.num_output_files;
   compaction_job_stats_->num_output_files_blob = stats.num_output_files_blob;
 
-//  mutex_for_gpu_compaction.lock();
   gpu_stats.cpu_all_micros += compaction_job_stats_->elapsed_micros;
-//  mutex_for_gpu_compaction.unlock();
 
   if (stats.num_output_files > 0) {
     CopyPrefix(compact_->SmallestUserKey(),
@@ -2450,15 +2448,11 @@ Status CompactionJob::GPUCompaction(CompactionJob* compaction_job,
   cudaStream_t stream[8];
   CreateStream(stream, 8);
 
-//  mutex_for_gpu_compaction.lock();
-
   size_t sorted_size;
 
   GPUKeyValue* result_d =
       DecodeAndSort(num_inputs, input_files_d, num_kv_data_block,
                     sorted_size, stream);
-
-//  mutex_for_gpu_compaction.unlock();
 
   // 编码
   // 编码准备: 划分键值对到多个SSTable
@@ -2487,8 +2481,6 @@ Status CompactionJob::GPUCompaction(CompactionJob* compaction_job,
                    smallest_seqno[i]);
   }
 
-//  mutex_for_gpu_compaction.lock();
-
   // GPU并行编码多SSTable
   EncodeSSTables(compaction_job, compact, result_d, input_files_d, infos, metas,
                  file_writers, tbs, tps, num_kv_data_block, stream);
@@ -2502,8 +2494,6 @@ Status CompactionJob::GPUCompaction(CompactionJob* compaction_job,
 
   compaction_stats_.AddCpuMicros(compaction_stats_.stats.micros);
 
-//  mutex_for_gpu_compaction.lock();
-
   gpu_stats.gpu_total_input_bytes += gpu_input_bytes;
   gpu_stats.gpu_compaction_count++;
 
@@ -2511,8 +2501,6 @@ Status CompactionJob::GPUCompaction(CompactionJob* compaction_job,
     gpu_stats.gpu_total_output_bytes += info.file_size;
     compaction_stats_.stats.bytes_written += info.file_size;
   }
-
-//  mutex_for_gpu_compaction.unlock();
 
   RecordTimeToHistogram(stats_, COMPACTION_TIME,
                         compaction_stats_.stats.micros);

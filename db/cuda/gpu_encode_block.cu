@@ -1275,8 +1275,6 @@ void BuildSSTables(
 
   gpu_stats.gpu_all_micros += duration.count();
 
-//  mutex_for_gpu_compaction.unlock();
-
   // 写SSTable
   // 方法1
   /*size_t num_threads;
