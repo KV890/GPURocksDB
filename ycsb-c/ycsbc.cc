@@ -252,7 +252,6 @@ int RunWithColumnFamily(utils::Properties props, const std::string &filename,
   wl.Init(props);
 
   // Loads data
-  // 使用 std::map 来存储每个数字及其出现次数
   cerr << "--------------------Loading--------------------" << endl;
 
   vector<future<size_t>> actual_ops;
@@ -288,7 +287,7 @@ int RunWithColumnFamily(utils::Properties props, const std::string &filename,
 
   cerr << endl;
 
-  // Performs transactions a
+  // Performs transactions
   cerr << "--------------------Transaction--------------------" << endl;
 
   actual_ops.clear();
@@ -354,12 +353,18 @@ int main(const int argc, const char *argv[]) {
   size_t batch_size = std::stoull(props.GetProperty("batch_size", "1"));
   bool is_running = props.GetProperty("type", "load") == "run";
 
+  rocksdb::gpu_stats.OpenCuFileDriver();
+
   if (num_column_family > 1 || batch_size > 1) {
-    return RunWithColumnFamily(props, filename, num_threads, is_running,
+    RunWithColumnFamily(props, filename, num_threads, is_running,
                                batch_size);
   } else {
-    return Run(props, filename, num_threads, is_running);
+    Run(props, filename, num_threads, is_running);
   }
+
+  rocksdb::gpu_stats.CloseCuFileDriver();
+
+  return 0;
 }
 
 std::string ParseCommandLine(int argc, const char *argv[],

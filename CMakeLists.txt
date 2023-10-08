@@ -1632,8 +1632,8 @@ find_package(CUDA REQUIRED)
 include_directories(${CUDA_INCLUDE_DIRS})
 
 # 设置库路径和头文件路径
-set(CUFILE_PATH "/usr/local/cuda-12.2/targets/x86_64-linux/lib/")
-set(CUFILE_INCLUDE_PATH "/usr/local/cuda-12.2/targets/x86_64-linux/include/")
+set(CUFILE_PATH "/usr/local/cuda/targets/x86_64-linux/lib/")
+set(CUFILE_INCLUDE_PATH "/usr/local/cuda/targets/x86_64-linux/include/")
 
 # 找到 cuFile 库
 find_library(CUFILE_LIBRARY cufile HINTS ${CUFILE_PATH})
