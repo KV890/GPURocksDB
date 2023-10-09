@@ -882,8 +882,8 @@ Status CompactionJob::Run() {
                         output.meta.fd.GetNumber(), output.meta.fd.GetPathId());
       tp[fn] = output.table_properties;
     }
+    compact_->compaction->SetOutputTableProperties(std::move(tp));
   }
-  compact_->compaction->SetOutputTableProperties(std::move(tp));
 
   // Finish up all book-keeping to unify the subcompaction results
   compact_->AggregateCompactionStats(compaction_stats_, *compaction_job_stats_);
@@ -2197,23 +2197,11 @@ void CompactionJob::OpenOutputFile(size_t i, const Compaction* compact,
                                    const char* smallest_key,
                                    uint64_t largest_seqno,
                                    uint64_t smallest_seqno) {
-  std::shared_ptr<WritableFileWriter> file_writer;
-  std::shared_ptr<TableBuilderOptions> tboptions;
-  TableProperties tp;
-  FileMetaData meta;
+  metas[i].largest.DecodeFrom(Slice(largest_key, keySize_ + 8));
+  metas[i].smallest.DecodeFrom(Slice(smallest_key, keySize_ + 8));
 
-  MyOpenCompactionOutputFile(compact, file_writer, meta, tboptions);
-
-  meta.largest.DecodeFrom(Slice(largest_key, keySize_ + 8));
-  meta.smallest.DecodeFrom(Slice(smallest_key, keySize_ + 8));
-
-  meta.fd.largest_seqno = largest_seqno;
-  meta.fd.smallest_seqno = smallest_seqno;
-
-  file_writers[i] = file_writer;
-  tbs[i] = tboptions;
-  metas[i] = meta;
-  tps[i] = tp;
+  metas[i].fd.largest_seqno = largest_seqno;
+  metas[i].fd.smallest_seqno = smallest_seqno;
 }
 
 Status CompactionJob::MyOpenCompactionOutputFile(
@@ -2359,8 +2347,8 @@ Status CompactionJob::MyFinishCompactionOutputFile(
     }
   }
 
-//  file_writer->Sync(false);
-//  file_writer->Close();
+  //  file_writer->Sync(false);
+  //  file_writer->Close();
   meta->file_checksum = file_writer->GetFileChecksum();
   meta->file_checksum_func_name = file_writer->GetFileChecksumFuncName();
 
@@ -2405,8 +2393,7 @@ Status CompactionJob::MyFinishCompactionOutputFile(
   return s;
 }
 
-Status CompactionJob::GPUCompaction(CompactionJob* compaction_job,
-                                    const Compaction* compact) {
+Status CompactionJob::GPUCompaction(const Compaction* compact) {
   is_gpu_compact = true;
   log_buffer_->FlushBufferToLog();
   LogCompaction();
@@ -2450,9 +2437,8 @@ Status CompactionJob::GPUCompaction(CompactionJob* compaction_job,
 
   size_t sorted_size;
 
-  GPUKeyValue* result_d =
-      DecodeAndSort(num_inputs, input_files_d, num_kv_data_block,
-                    sorted_size, stream);
+  GPUKeyValue* result_d = DecodeAndSort(num_inputs, input_files_d,
+                                        num_kv_data_block, sorted_size, stream);
 
   // 编码
   // 编码准备: 划分键值对到多个SSTable
@@ -2465,6 +2451,14 @@ Status CompactionJob::GPUCompaction(CompactionJob* compaction_job,
   file_writers.resize(info_size);
   tbs.resize(info_size);
 
+  for (size_t i = 0; i < info_size; ++i) {
+    MyOpenCompactionOutputFile(compact, file_writers[i], metas[i], tbs[i]);
+  }
+
+  // GPU并行编码多SSTable
+  EncodeSSTables(result_d, input_files_d, infos, metas, file_writers, tbs, tps,
+                 num_kv_data_block, stream);
+
   auto largest_key = std::make_unique<char[]>(info_size * (keySize_ + 8));
   auto smallest_key = std::make_unique<char[]>(info_size * (keySize_ + 8));
   std::vector<uint64_t> largest_seqno(info_size);
@@ -2476,17 +2470,20 @@ Status CompactionJob::GPUCompaction(CompactionJob* compaction_job,
 
   // GPU并行编码多SSTable
   for (size_t i = 0; i < info_size; ++i) {
-    OpenOutputFile(i, compact, largest_key.get() + i * (keySize_ + 8),
-                   smallest_key.get() + i * (keySize_ + 8), largest_seqno[i],
-                   smallest_seqno[i]);
+    metas[i].largest.DecodeFrom(
+        Slice(largest_key.get() + i * (keySize_ + 8), keySize_ + 8));
+    metas[i].smallest.DecodeFrom(
+        Slice(smallest_key.get() + i * (keySize_ + 8), keySize_ + 8));
+
+    metas[i].fd.largest_seqno = largest_seqno[i];
+    metas[i].fd.smallest_seqno = smallest_seqno[i];
+
+    MyFinishCompactionOutputFile(compact, file_writers[i], &metas[i], &infos[i],
+                                 &tps[i]);
   }
 
-  // GPU并行编码多SSTable
-  EncodeSSTables(compaction_job, compact, result_d, input_files_d, infos, metas,
-                 file_writers, tbs, tps, num_kv_data_block, stream);
-
   DestroyStream(stream, 8);
-  ReleaseSource(input_files_d, num_inputs);
+  ReleaseSource(input_files_d, result_d, num_inputs);
 
   compaction_stats_.SetMicros(db_options_.clock->NowMicros() - start_micros);
 

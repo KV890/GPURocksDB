@@ -58,10 +58,10 @@ __global__ void PrepareOutputKernel(SSTableInfo* info_d, size_t info_size,
          result_d[curr_pos_first_key].key, keySize_ + 8);
 }
 
-void PrepareOutput(SSTableInfo* info, size_t info_size, GPUKeyValue* result_d,
-                   char* largest_key, char* smallest_key,
-                   uint64_t* largest_seqno, uint64_t* smallest_seqno,
-                   cudaStream_t* stream) {
+void PrepareOutput(SSTableInfo* info, size_t info_size,
+                   GPUKeyValue* key_value_d_tmp, char* largest_key,
+                   char* smallest_key, uint64_t* largest_seqno,
+                   uint64_t* smallest_seqno, cudaStream_t* stream) {
   size_t current_num_kv = 0;
 
   GPUKeyValue max_key;
@@ -70,22 +70,22 @@ void PrepareOutput(SSTableInfo* info, size_t info_size, GPUKeyValue* result_d,
   GPUKeyValue min_element;
   for (size_t i = 0; i < info_size; ++i) {
     cudaMemcpyAsync(&max_key,
-                    result_d + current_num_kv + info[i].total_num_kv - 1,
+                    key_value_d_tmp + current_num_kv + info[i].total_num_kv - 1,
                     sizeof(GPUKeyValue), cudaMemcpyDeviceToHost, stream[0]);
-    cudaMemcpyAsync(&min_key, result_d + current_num_kv, sizeof(GPUKeyValue),
-                    cudaMemcpyDeviceToHost, stream[0]);
+    cudaMemcpyAsync(&min_key, key_value_d_tmp + current_num_kv,
+                    sizeof(GPUKeyValue), cudaMemcpyDeviceToHost, stream[0]);
 
     memcpy(largest_key + i * (keySize_ + 8), max_key.key, keySize_ + 8);
     memcpy(smallest_key + i * (keySize_ + 8), min_key.key, keySize_ + 8);
 
-    thrust::sort(thrust::device, result_d + current_num_kv,
-                 result_d + current_num_kv + info[i].total_num_kv,
+    thrust::sort(thrust::device, key_value_d_tmp + current_num_kv,
+                 key_value_d_tmp + current_num_kv + info[i].total_num_kv,
                  MaxSequence());
 
     cudaMemcpyAsync(&max_element,
-                    result_d + current_num_kv + info[i].total_num_kv - 1,
+                    key_value_d_tmp + current_num_kv + info[i].total_num_kv - 1,
                     sizeof(GPUKeyValue), cudaMemcpyDeviceToHost, stream[1]);
-    cudaMemcpyAsync(&min_element, result_d + current_num_kv,
+    cudaMemcpyAsync(&min_element, key_value_d_tmp + current_num_kv,
                     sizeof(GPUKeyValue), cudaMemcpyDeviceToHost, stream[1]);
 
     largest_seqno[i] = max_element.sequence;
@@ -236,7 +236,6 @@ char* EncodeSSTable(const std::vector<GPUKeyValue>& keyValues,
 }
 
 void EncodeSSTables(
-    CompactionJob* compaction_job, const Compaction* compact,
     GPUKeyValue* key_values_d, InputFile* input_files_d,
     std::vector<SSTableInfo>& infos, std::vector<FileMetaData>& metas,
     std::vector<std::shared_ptr<WritableFileWriter>>& file_writes,
@@ -245,8 +244,8 @@ void EncodeSSTables(
     cudaStream_t* stream) {
   auto start_time = std::chrono::high_resolution_clock::now();
 
-  BuildSSTables(compaction_job, compact, key_values_d, input_files_d, infos,
-                metas, file_writes, tbs, tps, num_kv_data_block, stream);
+  BuildSSTables(key_values_d, input_files_d, infos, metas, file_writes, tbs,
+                tps, num_kv_data_block, stream);
 
   auto end_time = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -260,7 +259,10 @@ void ReleaseDevPtr(char** blocks_buffer_d) { cudaFreeHost(*blocks_buffer_d); }
 void ReleaseSource(GPUKeyValue** key_value_h) { cudaFreeHost(*key_value_h); }
 
 // 重点
-void ReleaseSource(InputFile* inputFiles_d, size_t num_inputs) {
+void ReleaseSource(InputFile* inputFiles_d, GPUKeyValue* key_value_d,
+                   size_t num_inputs) {
+  cudaFree(key_value_d);
+
   InputFile inputFiles_h;
 
   for (size_t i = 0; i < num_inputs; ++i) {

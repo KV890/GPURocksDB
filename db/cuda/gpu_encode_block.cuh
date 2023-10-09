@@ -864,9 +864,7 @@ void BuildIndexBlocks(char** buffer_d, char* index_keys_d,
  * @param data_size
  * @param index_size
  */
-void WriteOtherBlocks(char* buffer_d, CompactionJob* compaction_job,
-                      const Compaction* compact,
-                      const std::shared_ptr<WritableFileWriter>& file_writer,
+void WriteOtherBlocks(char* buffer_d,
                       const std::shared_ptr<TableBuilderOptions>& tbs,
                       FileMetaData* meta, TableProperties* tp,
                       SSTableInfo* info, size_t data_size, size_t index_size);
@@ -884,7 +882,6 @@ void WriteOtherBlocks(char* buffer_d, CompactionJob* compaction_job,
  * @param num_kv_data_block
  */
 void BuildSSTables(
-    CompactionJob* compaction_job, const Compaction* compact,
     GPUKeyValue* key_values_d, InputFile* input_files_d,
     std::vector<SSTableInfo>& infos, std::vector<FileMetaData>& metas,
     std::vector<std::shared_ptr<WritableFileWriter>>& file_writes,

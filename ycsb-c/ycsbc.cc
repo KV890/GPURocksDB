@@ -173,9 +173,8 @@ int Run(utils::Properties props, std::string &filename, size_t num_threads,
   return 0;
 }
 
-size_t DelegateClientWithCF(ycsbc::DB *db, ycsbc::CoreWorkload *wl,
-                            size_t num_ops, bool is_loading,
-                            size_t batch_size) {
+size_t DelegateClientBatch(ycsbc::DB *db, ycsbc::CoreWorkload *wl,
+                           size_t num_ops, bool is_loading, size_t batch_size) {
   time_t now = time(nullptr);
   fprintf(stderr, "Time: %s", ctime(&now));  // ctime() adds newline
   db->Init();
@@ -238,9 +237,8 @@ size_t DelegateClientWithCF(ycsbc::DB *db, ycsbc::CoreWorkload *wl,
   return oks;
 }
 
-int RunWithColumnFamily(utils::Properties props, const std::string &filename,
-                        size_t num_threads, bool is_running,
-                        size_t batch_size) {
+int RunBatch(utils::Properties props, const std::string &filename,
+             size_t num_threads, bool is_running, size_t batch_size) {
   ycsbc::DB *db = ycsbc::DBFactory::CreateDB(props);
 
   if (!db) {
@@ -262,7 +260,7 @@ int RunWithColumnFamily(utils::Properties props, const std::string &filename,
 
   actual_ops.reserve(num_threads);
   for (size_t i = 0; i < num_threads; ++i) {
-    actual_ops.emplace_back(async(launch::async, DelegateClientWithCF, db, &wl,
+    actual_ops.emplace_back(async(launch::async, DelegateClientBatch, db, &wl,
                                   total_ops / num_threads, true, batch_size));
   }
   assert(actual_ops.size() == num_threads);
@@ -296,7 +294,7 @@ int RunWithColumnFamily(utils::Properties props, const std::string &filename,
   utils::Timer<double> timer;
   timer.Start();
   for (size_t i = 0; i < num_threads; ++i) {
-    actual_ops.emplace_back(async(launch::async, DelegateClientWithCF, db, &wl,
+    actual_ops.emplace_back(async(launch::async, DelegateClientBatch, db, &wl,
                                   num_ops / num_threads, false, batch_size));
   }
   assert(actual_ops.size() == num_threads);
@@ -438,14 +436,6 @@ std::string ParseCommandLine(int argc, const char *argv[],
       }
 
       argindex++;
-    } else if (strcmp(argv[argindex], "-num_column_family") == 0) {
-      argindex++;
-      if (argindex >= argc) {
-        UsageMessage(argv[0]);
-        exit(0);
-      }
-      props.SetProperty("num_column_family", argv[argindex]);
-      argindex++;
     } else if (strcmp(argv[argindex], "-batch_size") == 0) {
       argindex++;
       if (argindex >= argc) {
@@ -499,16 +489,13 @@ int main(const int argc, const char *argv[]) {
   string filename = ParseCommandLine(argc, argv, props);
 
   size_t num_threads = std::stoull(props.GetProperty("threadcount", "1"));
-  size_t num_column_family =
-      std::stoull(props.GetProperty("num_column_family", "1"));
   size_t batch_size = std::stoull(props.GetProperty("batch_size", "1"));
   bool is_running = props.GetProperty("type", "load") == "run";
 
   rocksdb::gpu_stats.OpenCuFileDriver();
 
-  if (num_column_family > 1 || batch_size > 1) {
-    RunWithColumnFamily(props, filename, num_threads, is_running,
-                        batch_size);
+  if (batch_size > 1) {
+    RunBatch(props, filename, num_threads, is_running, batch_size);
   } else {
     Run(props, filename, num_threads, is_running);
   }

@@ -232,8 +232,7 @@ class CompactionJob {
       std::shared_ptr<WritableFileWriter> file_writer, FileMetaData* meta,
       SSTableInfo* info, TableProperties* tp);
 
-  Status GPUCompaction(CompactionJob* compaction_job,
-                       const Compaction* compact);
+  Status GPUCompaction(const Compaction* compact);
 
   // REQUIRED: mutex held
   // Add compaction input/output to the current version

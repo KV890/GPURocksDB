@@ -1005,9 +1005,7 @@ void BuildIndexBlocks(char** buffer_d, char* index_keys_d,
       *buffer_d, num_data_block_last_file, index_size_last_file);
 }
 
-void WriteOtherBlocks(char* buffer_d, CompactionJob* compaction_job,
-                      const Compaction* compact,
-                      const std::shared_ptr<WritableFileWriter>& file_writer,
+void WriteOtherBlocks(char* buffer_d,
                       const std::shared_ptr<TableBuilderOptions>& tbs,
                       FileMetaData* meta, TableProperties* tp,
                       SSTableInfo* info, size_t data_size, size_t index_size) {
@@ -1047,10 +1045,6 @@ void WriteOtherBlocks(char* buffer_d, CompactionJob* compaction_job,
 
   info->file_size = new_offset;
 
-  std::string filename = file_writer->file_name();
-
-  WriteSSTable(buffer_d, filename, new_offset);
-
   /*std::string filename = file_writer->file_name();
 
   int fd = open(filename.c_str(), O_CREAT | O_RDWR | O_DIRECT, 0664);
@@ -1066,13 +1060,9 @@ void WriteOtherBlocks(char* buffer_d, CompactionJob* compaction_job,
 
   cuFileHandleDeregister(handle);
   close(fd);*/
-
-  compaction_job->MyFinishCompactionOutputFile(compact, file_writer, meta, info,
-                                               tp);
 }
 
 void BuildSSTables(
-    CompactionJob* compaction_job, const Compaction* compact,
     GPUKeyValue* key_values_d, InputFile* input_files_d,
     std::vector<SSTableInfo>& infos, std::vector<FileMetaData>& metas,
     std::vector<std::shared_ptr<WritableFileWriter>>& file_writes,
@@ -1363,47 +1353,31 @@ void BuildSSTables(
   // 方法4
   /*for (size_t i = 0; i < num_outputs - 1; ++i) {
     char* current_file_buffer = all_files_buffer_d + estimate_file_size * i;
-    WriteOtherBlocks(current_file_buffer, compaction_job, compact,
-                     file_writes[i], tbs[i], &metas[i], &tps[i], &infos[i],
+    WriteOtherBlocks(current_file_buffer, tbs[i], &metas[i], &tps[i], &infos[i],
                      data_size, index_size);
+
+    WriteSSTable(current_file_buffer, file_writes[i]->file_name(),
+                 infos[i].file_size);
   }
 
   char* current_file_buffer =
       all_files_buffer_d + estimate_file_size * (num_outputs - 1);
-  WriteOtherBlocks(current_file_buffer, compaction_job, compact,
-                   file_writes[num_outputs - 1], tbs[num_outputs - 1],
+  WriteOtherBlocks(current_file_buffer, tbs[num_outputs - 1],
                    &metas[num_outputs - 1], &tps[num_outputs - 1],
                    &infos[num_outputs - 1], data_size_last_file,
-                   index_size_last_file);*/
+                   index_size_last_file);
+
+  WriteSSTable(current_file_buffer, file_writes[num_outputs - 1]->file_name(),
+               infos[num_outputs - 1].file_size);*/
 
   // 方法5
   std::vector<std::thread> thread_pool;
 
-  if (num_outputs > 1 && num_outputs < 8) {
-    thread_pool.reserve(1);
-    thread_pool.emplace_back([&all_files_buffer_d, &num_outputs,
-                              &estimate_file_size, &compaction_job, &compact,
-                              &file_writes, &tbs, &metas, &tps, &infos,
-                              &data_size, &index_size] {
-      for (size_t i = 0; i < num_outputs / 2; ++i) {
-        char* current_file_buffer = all_files_buffer_d + estimate_file_size * i;
-        WriteOtherBlocks(current_file_buffer, compaction_job, compact,
-                         file_writes[i], tbs[i], &metas[i], &tps[i], &infos[i],
-                         data_size, index_size);
-      }
-    });
+  // 计算每个线程应处理的任务数量
+  size_t outputs_per_thread = num_outputs / 4;
 
-    for (size_t i = num_outputs / 2; i < num_outputs - 1; ++i) {
-      char* current_file_buffer = all_files_buffer_d + estimate_file_size * i;
-      WriteOtherBlocks(current_file_buffer, compaction_job, compact,
-                       file_writes[i], tbs[i], &metas[i], &tps[i], &infos[i],
-                       data_size, index_size);
-    }
-  } else if (num_outputs > 7) {
+  if (outputs_per_thread > 0) {
     thread_pool.reserve(3);
-
-    // 计算每个线程应处理的任务数量
-    size_t outputs_per_thread = num_outputs / 4;
 
     for (int j = 0; j < 3; ++j) {
       // 每个线程处理 outputs_per_thread个输出，
@@ -1411,38 +1385,42 @@ void BuildSSTables(
       size_t start_index = j * outputs_per_thread;
       size_t end_index = start_index + outputs_per_thread;
 
-      thread_pool.emplace_back([&all_files_buffer_d, &compaction_job, &compact,
-                                &file_writes, &tbs, &metas, &tps, &infos,
-                                &data_size, &index_size, start_index, end_index,
-                                &estimate_file_size] {
+      thread_pool.emplace_back([&all_files_buffer_d, &file_writes, &tbs, &metas,
+                                   &tps, &infos, &data_size, &index_size,
+                                   start_index, end_index, &estimate_file_size] {
         for (size_t i = start_index; i < end_index; ++i) {
           char* current_file_buffer =
               all_files_buffer_d + estimate_file_size * i;
-          WriteOtherBlocks(current_file_buffer, compaction_job, compact,
-                           file_writes[i], tbs[i], &metas[i], &tps[i],
+          WriteOtherBlocks(current_file_buffer, tbs[i], &metas[i], &tps[i],
                            &infos[i], data_size, index_size);
+
+          WriteSSTable(current_file_buffer, file_writes[i]->file_name(),
+                       infos[i].file_size);
         }
       });
     }
+  }
 
-    for (size_t i = 3 * outputs_per_thread; i < num_outputs - 1; ++i) {
-      char* current_file_buffer = all_files_buffer_d + estimate_file_size * i;
-      WriteOtherBlocks(current_file_buffer, compaction_job, compact,
-                       file_writes[i], tbs[i], &metas[i], &tps[i], &infos[i],
-                       data_size, index_size);
-    }
+  for (size_t i = 3 * outputs_per_thread; i < num_outputs - 1; ++i) {
+    char* current_file_buffer = all_files_buffer_d + estimate_file_size * i;
+    WriteOtherBlocks(current_file_buffer, tbs[i], &metas[i], &tps[i],
+                     &infos[i], data_size, index_size);
+
+    WriteSSTable(current_file_buffer, file_writes[i]->file_name(),
+                 infos[i].file_size);
   }
 
   char* current_file_buffer =
       all_files_buffer_d + estimate_file_size * (num_outputs - 1);
-  WriteOtherBlocks(current_file_buffer, compaction_job, compact,
-                   file_writes[num_outputs - 1], tbs[num_outputs - 1],
+  WriteOtherBlocks(current_file_buffer, tbs[num_outputs - 1],
                    &metas[num_outputs - 1], &tps[num_outputs - 1],
                    &infos[num_outputs - 1], data_size_last_file,
                    index_size_last_file);
 
+  WriteSSTable(current_file_buffer, file_writes[num_outputs - 1]->file_name(),
+               infos[num_outputs - 1].file_size);
+
   // 释放资源
-  cudaFree(key_values_d);
   cudaFree(index_keys_d);
   cudaFree(restarts_last_data_block_last_file_d);
   cudaFree(block_handles_d);

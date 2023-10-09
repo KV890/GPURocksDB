@@ -599,7 +599,7 @@ struct DBOptions {
   // Default: -1
   //
   // Dynamically changeable through SetDBOptions() API.
-  int max_open_files = 65536;
+  int max_open_files = -1;
 
   // If max_open_files is -1, DB will open all files on DB::Open(). You can
   // use this option to increase the number of threads used to open the files.
@@ -716,7 +716,7 @@ struct DBOptions {
   // Default: -1
   //
   // Dynamically changeable through SetDBOptions() API.
-  int max_background_compactions = 1;
+  int max_background_compactions = -1;
 
   // This value represents the maximum number of threads that will
   // concurrently perform a compaction job by breaking it into multiple,

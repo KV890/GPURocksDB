@@ -3540,7 +3540,7 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
     NotifyOnCompactionBegin(c->column_family_data(), c.get(), status,
                             compaction_job_stats, job_context->job_id);
     mutex_.Unlock();
-    compaction_job.GPUCompaction(&compaction_job, c.get());
+    compaction_job.GPUCompaction(c.get());
     mutex_.Lock();
 
     // CPU

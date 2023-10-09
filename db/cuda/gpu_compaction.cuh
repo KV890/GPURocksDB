@@ -62,10 +62,10 @@ __global__ void PrepareOutputKernel(SSTableInfo* info_d, size_t info_size,
                                     GPUKeyValue* result_d, char* largest_key_d,
                                     char* smallest_key_d);
 
-void PrepareOutput(SSTableInfo* info, size_t info_size, GPUKeyValue* result_d,
-                   char* largest_key, char* smallest_key,
-                   uint64_t* largest_seqno, uint64_t* smallest_seqno,
-                   cudaStream_t* stream);
+void PrepareOutput(SSTableInfo* info, size_t info_size,
+                   GPUKeyValue* key_value_d_tmp, char* largest_key,
+                   char* smallest_key, uint64_t* largest_seqno,
+                   uint64_t* smallest_seqno, cudaStream_t* stream);
 
 void AddInputFile(size_t level, const std::string& filename, FileMetaData* meta,
                   InputFile* input_file_d);
@@ -133,7 +133,6 @@ char* EncodeSSTable(const std::vector<GPUKeyValue>& keyValues,
  * @param num_kv_data_block
  */
 void EncodeSSTables(
-    CompactionJob* compaction_job, const Compaction* compact,
     GPUKeyValue* key_values_d, InputFile* input_files_d,
     std::vector<SSTableInfo>& infos, std::vector<FileMetaData>& metas,
     std::vector<std::shared_ptr<WritableFileWriter>>& file_writes,
@@ -155,6 +154,7 @@ void ReleaseSource(GPUKeyValue** key_value_h);
  * @param inputFiles_d
  * @param num_inputs
  */
-void ReleaseSource(InputFile* inputFiles_d, size_t num_inputs);
+void ReleaseSource(InputFile* inputFiles_d, GPUKeyValue* key_value_d,
+                   size_t num_inputs);
 
 }  // namespace ROCKSDB_NAMESPACE

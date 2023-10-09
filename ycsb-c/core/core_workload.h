@@ -136,10 +136,8 @@ class CoreWorkload {
   virtual void BuildUpdate(std::vector<ycsbc::DB::KVPair> &update);
 
   virtual std::string NextTable() { return table_name_; }
-  virtual std::string NextSequenceKey(
-      uint64_t &key_num);  /// Used for loading data
-  virtual std::string NextTransactionKey(
-      uint64_t &key_num);  /// Used for transactions
+  virtual std::string NextSequenceKey();     /// Used for loading data
+  virtual std::string NextTransactionKey();  /// Used for transactions
   virtual Operation NextOperation() { return op_chooser_.Next(); }
   virtual std::string NextFieldName();
   virtual size_t NextScanLength() { return scan_len_chooser_->Next(); }
@@ -187,12 +185,13 @@ class CoreWorkload {
   size_t record_count_;
 };
 
-inline std::string CoreWorkload::NextSequenceKey(uint64_t &key_num) {
-  key_num = key_generator_->Next();
+inline std::string CoreWorkload::NextSequenceKey() {
+  uint64_t key_num = key_generator_->Next();
   return BuildKeyName(key_num);
 }
 
-inline std::string CoreWorkload::NextTransactionKey(uint64_t &key_num) {
+inline std::string CoreWorkload::NextTransactionKey() {
+  uint64_t key_num;
   do {
     key_num = key_chooser_->Next();
   } while (key_num > insert_key_sequence_.Last());
