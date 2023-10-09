@@ -174,9 +174,12 @@
  *
  *
  */
+
 #include <cuda_runtime.h>
 #include <driver_types.h>
+#include <fcntl.h>
 
+#include <csignal>
 #include <cstdlib>
 #include <memory>
 #include <mutex>
@@ -218,8 +221,6 @@
       exit(1);                                                \
     }                                                         \
   } while (0)
-
-#define MAX_OUTPUTS 1024
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -356,6 +357,23 @@ __device__ inline char* GPUEncodeTo(char* dst, uint64_t offset, uint64_t size) {
   char* cur = GPUEncodeVarint64(dst, offset);
   cur = GPUEncodeVarint64(cur, size);
   return cur;
+}
+
+inline void WriteSSTable(char* buffer_d, const std::string& filename,
+                         size_t file_size) {
+  int fd = open(filename.c_str(), O_CREAT | O_RDWR | O_DIRECT, 0664);
+
+  CUfileDescr_t descr;
+  descr.handle.fd = fd;
+  descr.type = CU_FILE_HANDLE_TYPE_OPAQUE_FD;
+
+  CUfileHandle_t handle;
+  cuFileHandleRegister(&handle, &descr);
+
+  cuFileWrite(handle, buffer_d, file_size, 0, 0);
+
+  cuFileHandleDeregister(handle);
+  close(fd);
 }
 
 /**
@@ -846,12 +864,12 @@ void BuildIndexBlocks(char** buffer_d, char* index_keys_d,
  * @param data_size
  * @param index_size
  */
-void WriteSSTable(char* buffer_d, CompactionJob* compaction_job,
-                  const Compaction* compact,
-                  const std::shared_ptr<WritableFileWriter>& file_writer,
-                  const std::shared_ptr<TableBuilderOptions>& tbs,
-                  FileMetaData* meta, TableProperties* tp, SSTableInfo* info,
-                  size_t data_size, size_t index_size);
+void WriteOtherBlocks(char* buffer_d, CompactionJob* compaction_job,
+                      const Compaction* compact,
+                      const std::shared_ptr<WritableFileWriter>& file_writer,
+                      const std::shared_ptr<TableBuilderOptions>& tbs,
+                      FileMetaData* meta, TableProperties* tp,
+                      SSTableInfo* info, size_t data_size, size_t index_size);
 
 /**
  * GPU并行编码多SSTable

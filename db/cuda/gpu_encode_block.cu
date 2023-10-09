@@ -1,11 +1,6 @@
 //
 // Created by jxx on 5/6/23.
 //
-
-#include <fcntl.h>
-
-#include <csignal>
-
 #include "gpu_encode_block.cuh"
 
 namespace ROCKSDB_NAMESPACE {
@@ -1010,12 +1005,12 @@ void BuildIndexBlocks(char** buffer_d, char* index_keys_d,
       *buffer_d, num_data_block_last_file, index_size_last_file);
 }
 
-void WriteSSTable(char* buffer_d, CompactionJob* compaction_job,
-                  const Compaction* compact,
-                  const std::shared_ptr<WritableFileWriter>& file_writer,
-                  const std::shared_ptr<TableBuilderOptions>& tbs,
-                  FileMetaData* meta, TableProperties* tp, SSTableInfo* info,
-                  size_t data_size, size_t index_size) {
+void WriteOtherBlocks(char* buffer_d, CompactionJob* compaction_job,
+                      const Compaction* compact,
+                      const std::shared_ptr<WritableFileWriter>& file_writer,
+                      const std::shared_ptr<TableBuilderOptions>& tbs,
+                      FileMetaData* meta, TableProperties* tp,
+                      SSTableInfo* info, size_t data_size, size_t index_size) {
   meta->num_entries = info->total_num_kv;
   meta->num_data_blocks = info->num_data_block;
   meta->raw_key_size = (keySize_ + 8) * info->total_num_kv;
@@ -1054,6 +1049,10 @@ void WriteSSTable(char* buffer_d, CompactionJob* compaction_job,
 
   std::string filename = file_writer->file_name();
 
+  WriteSSTable(buffer_d, filename, new_offset);
+
+  /*std::string filename = file_writer->file_name();
+
   int fd = open(filename.c_str(), O_CREAT | O_RDWR | O_DIRECT, 0664);
 
   CUfileDescr_t descr;
@@ -1066,7 +1065,7 @@ void WriteSSTable(char* buffer_d, CompactionJob* compaction_job,
   cuFileWrite(handle, buffer_d, new_offset, 0, 0);
 
   cuFileHandleDeregister(handle);
-  close(fd);
+  close(fd);*/
 
   compaction_job->MyFinishCompactionOutputFile(compact, file_writer, meta, info,
                                                tp);
@@ -1302,7 +1301,7 @@ void BuildSSTables(
     });
   }
 
-  WriteSSTable(all_files_buffer + estimate_file_size * (num_outputs - 1),
+  WriteOtherBlocks(all_files_buffer + estimate_file_size * (num_outputs - 1),
                compaction_job, compact, file_writes[num_outputs - 1],
                tbs[num_outputs - 1], &metas[num_outputs - 1],
                &tps[num_outputs - 1], &infos[num_outputs - 1],
@@ -1314,7 +1313,7 @@ void BuildSSTables(
 
   for (size_t i = 0; i < num_outputs - 1; ++i) {
     char* current_file_buffer = all_files_buffer_d + estimate_file_size * i;
-    thread_pool_for_gpu.emplace_back(&WriteSSTable, current_file_buffer,
+    thread_pool_for_gpu.emplace_back(&WriteOtherBlocks, current_file_buffer,
                                      compaction_job, compact, file_writes[i],
                                      tbs[i], &metas[i], &tps[i], &infos[i],
                                      data_size, index_size);
@@ -1322,11 +1321,11 @@ void BuildSSTables(
 
   char* current_file_buffer =
       all_files_buffer_d + estimate_file_size * (num_outputs - 1);
-  WriteSSTable(current_file_buffer, compaction_job, compact,
-               file_writes[num_outputs - 1], tbs[num_outputs - 1],
-               &metas[num_outputs - 1], &tps[num_outputs - 1],
-               &infos[num_outputs - 1], data_size_last_file,
-               index_size_last_file);*/
+  WriteOtherBlocks(current_file_buffer, compaction_job, compact,
+                   file_writes[num_outputs - 1], tbs[num_outputs - 1],
+                   &metas[num_outputs - 1], &tps[num_outputs - 1],
+                   &infos[num_outputs - 1], data_size_last_file,
+                   index_size_last_file);*/
 
   // 方法3
   /*size_t count = num_outputs % num_threads_for_gpu == 0
@@ -1355,29 +1354,94 @@ void BuildSSTables(
     }
   }
 
-  WriteSSTable(all_files_buffer + estimate_file_size * (num_outputs - 1),
+  WriteOtherBlocks(all_files_buffer + estimate_file_size * (num_outputs - 1),
                compaction_job, compact, file_writes[num_outputs - 1],
                tbs[num_outputs - 1], &metas[num_outputs - 1],
                &tps[num_outputs - 1], &infos[num_outputs - 1],
                data_size_last_file, index_size_last_file);*/
 
   // 方法4
-  for (size_t i = 0; i < num_outputs - 1; ++i) {
+  /*for (size_t i = 0; i < num_outputs - 1; ++i) {
     char* current_file_buffer = all_files_buffer_d + estimate_file_size * i;
-    WriteSSTable(current_file_buffer, compaction_job, compact, file_writes[i],
-                 tbs[i], &metas[i], &tps[i], &infos[i], data_size, index_size);
+    WriteOtherBlocks(current_file_buffer, compaction_job, compact,
+                     file_writes[i], tbs[i], &metas[i], &tps[i], &infos[i],
+                     data_size, index_size);
   }
 
   char* current_file_buffer =
       all_files_buffer_d + estimate_file_size * (num_outputs - 1);
-  WriteSSTable(current_file_buffer, compaction_job, compact,
-               file_writes[num_outputs - 1], tbs[num_outputs - 1],
-               &metas[num_outputs - 1], &tps[num_outputs - 1],
-               &infos[num_outputs - 1], data_size_last_file,
-               index_size_last_file);
+  WriteOtherBlocks(current_file_buffer, compaction_job, compact,
+                   file_writes[num_outputs - 1], tbs[num_outputs - 1],
+                   &metas[num_outputs - 1], &tps[num_outputs - 1],
+                   &infos[num_outputs - 1], data_size_last_file,
+                   index_size_last_file);*/
+
+  // 方法5
+  std::vector<std::thread> thread_pool;
+
+  if (num_outputs > 1 && num_outputs < 8) {
+    thread_pool.reserve(1);
+    thread_pool.emplace_back([&all_files_buffer_d, &num_outputs,
+                              &estimate_file_size, &compaction_job, &compact,
+                              &file_writes, &tbs, &metas, &tps, &infos,
+                              &data_size, &index_size] {
+      for (size_t i = 0; i < num_outputs / 2; ++i) {
+        char* current_file_buffer = all_files_buffer_d + estimate_file_size * i;
+        WriteOtherBlocks(current_file_buffer, compaction_job, compact,
+                         file_writes[i], tbs[i], &metas[i], &tps[i], &infos[i],
+                         data_size, index_size);
+      }
+    });
+
+    for (size_t i = num_outputs / 2; i < num_outputs - 1; ++i) {
+      char* current_file_buffer = all_files_buffer_d + estimate_file_size * i;
+      WriteOtherBlocks(current_file_buffer, compaction_job, compact,
+                       file_writes[i], tbs[i], &metas[i], &tps[i], &infos[i],
+                       data_size, index_size);
+    }
+  } else if (num_outputs > 7) {
+    thread_pool.reserve(3);
+
+    // 计算每个线程应处理的任务数量
+    size_t outputs_per_thread = num_outputs / 4;
+
+    for (int j = 0; j < 3; ++j) {
+      // 每个线程处理 outputs_per_thread个输出，
+      // 如果还有剩余的输出，额外分配一个给当前线程
+      size_t start_index = j * outputs_per_thread;
+      size_t end_index = start_index + outputs_per_thread;
+
+      thread_pool.emplace_back([&all_files_buffer_d, &compaction_job, &compact,
+                                &file_writes, &tbs, &metas, &tps, &infos,
+                                &data_size, &index_size, start_index, end_index,
+                                &estimate_file_size] {
+        for (size_t i = start_index; i < end_index; ++i) {
+          char* current_file_buffer =
+              all_files_buffer_d + estimate_file_size * i;
+          WriteOtherBlocks(current_file_buffer, compaction_job, compact,
+                           file_writes[i], tbs[i], &metas[i], &tps[i],
+                           &infos[i], data_size, index_size);
+        }
+      });
+    }
+
+    for (size_t i = 3 * outputs_per_thread; i < num_outputs - 1; ++i) {
+      char* current_file_buffer = all_files_buffer_d + estimate_file_size * i;
+      WriteOtherBlocks(current_file_buffer, compaction_job, compact,
+                       file_writes[i], tbs[i], &metas[i], &tps[i], &infos[i],
+                       data_size, index_size);
+    }
+  }
+
+  char* current_file_buffer =
+      all_files_buffer_d + estimate_file_size * (num_outputs - 1);
+  WriteOtherBlocks(current_file_buffer, compaction_job, compact,
+                   file_writes[num_outputs - 1], tbs[num_outputs - 1],
+                   &metas[num_outputs - 1], &tps[num_outputs - 1],
+                   &infos[num_outputs - 1], data_size_last_file,
+                   index_size_last_file);
 
   // 释放资源
-  cudaFree(all_files_buffer_d);
   cudaFree(key_values_d);
   cudaFree(index_keys_d);
   cudaFree(restarts_last_data_block_last_file_d);
@@ -1388,9 +1452,11 @@ void BuildSSTables(
   delete[] restarts;
   delete[] restarts_last_data_block_last_file;
 
-  /*for (auto& thread : thread_pool_for_gpu) {
+  for (auto& thread : thread_pool) {
     thread.join();
-  }*/
+  }
+
+  cudaFree(all_files_buffer_d);
 }
 
 }  // namespace ROCKSDB_NAMESPACE

@@ -51,22 +51,10 @@ void RocksDB::SetOptions(rocksdb::Options *options, int max_background_jobs) {
   options->create_if_missing = true;
   options->create_missing_column_families = true;
   options->compression = rocksdb::CompressionType::kNoCompression;
-  options->level_compaction_dynamic_level_bytes = true;
-  options->min_write_buffer_number_to_merge = 2;
-  options->max_write_buffer_number = 5;
-  options->bytes_per_sync = 16 * 1024 * 1024;
-  options->write_buffer_size = 64 << 20;
-  options->level0_file_num_compaction_trigger = 4;
-  options->max_bytes_for_level_base = 512 * 1024 * 1024;
   options->max_background_jobs = max_background_jobs;
-
-  options->rate_limiter.reset(
-      rocksdb::NewGenericRateLimiter(512 * 1024 * 1024));
 
   auto table_options =
       options->table_factory->GetOptions<rocksdb::BlockBasedTableOptions>();
-
-  table_options->pin_l0_filter_and_index_blocks_in_cache = true;
 
   // cache
   size_t capacity = 8 << 20;

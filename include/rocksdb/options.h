@@ -989,8 +989,7 @@ struct DBOptions {
   //
   // Note: DOES NOT apply to WAL files. See wal_bytes_per_sync instead
   // Dynamically changeable through SetDBOptions() API.
-//  uint64_t bytes_per_sync = 0;
-  uint64_t bytes_per_sync = 16 * 1024 * 1024;
+  uint64_t bytes_per_sync = 0;
 
   // Same as bytes_per_sync, but applies to WAL files
   //
