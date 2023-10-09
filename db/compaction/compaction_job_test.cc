@@ -1470,7 +1470,7 @@ TEST_F(CompactionJobTest, VerifyPenultimateLevelOutput) {
   std::atomic_uint64_t latest_cold_seq = 0;
 
   SyncPoint::GetInstance()->SetCallBack(
-      "CompactionIterator::PrepareOutput.context", [&](void* arg) {
+      "CompactionIterator::InstallOutput.context", [&](void* arg) {
         auto context = static_cast<PerKeyPlacementContext*>(arg);
         context->output_to_penultimate_level =
             context->seq_num > latest_cold_seq;

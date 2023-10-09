@@ -378,7 +378,7 @@ class CompactionIterator {
   // Lower bound timestamp to retain full history in terms of user-defined
   // timestamp. If a key's timestamp is older than full_history_ts_low_, then
   // the key *may* be eligible for garbage collection (GC). The skipping logic
-  // is in `NextFromInput()` and `PrepareOutput()`.
+  // is in `NextFromInput()` and `InstallOutput()`.
   // If nullptr, NO GC will be performed and all history will be preserved.
   const std::string* const full_history_ts_low_;
 

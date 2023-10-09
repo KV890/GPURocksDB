@@ -394,7 +394,7 @@ bool CompactionIterator::InvokeFilterIfNeeded(bool* need_skip,
     // Only the StackableDB-based BlobDB impl's compaction filter should return
     // kChangeBlobIndex. Decision about rewriting blob and changing blob index
     // in the integrated BlobDB impl is made in subsequent call to
-    // PrepareOutput() and its callees.
+    // InstallOutput() and its callees.
     if (!compaction_filter_->IsStackedBlobDbInternalCompactionFilter()) {
       status_ = Status::NotSupported(
           "Only stacked BlobDB's internal compaction filter can return "
@@ -1205,7 +1205,7 @@ void CompactionIterator::DecideOutputLevel() {
   // Could be overridden by unittest
   PerKeyPlacementContext context(level_, ikey_.user_key, value_,
                                  ikey_.sequence);
-  TEST_SYNC_POINT_CALLBACK("CompactionIterator::PrepareOutput.context",
+  TEST_SYNC_POINT_CALLBACK("CompactionIterator::InstallOutput.context",
                            &context);
   output_to_penultimate_level_ = context.output_to_penultimate_level;
 #else
@@ -1299,7 +1299,7 @@ void CompactionIterator::PrepareOutput() {
       }
       ikey_.sequence = 0;
       last_key_seq_zeroed_ = true;
-      TEST_SYNC_POINT_CALLBACK("CompactionIterator::PrepareOutput:ZeroingSeq",
+      TEST_SYNC_POINT_CALLBACK("CompactionIterator::InstallOutput:ZeroingSeq",
                                &ikey_);
       if (!timestamp_size_) {
         current_key_.UpdateInternalKey(0, ikey_.type);

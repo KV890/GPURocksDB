@@ -2464,11 +2464,10 @@ Status CompactionJob::GPUCompaction(const Compaction* compact) {
   std::vector<uint64_t> largest_seqno(info_size);
   std::vector<uint64_t> smallest_seqno(info_size);
 
-  PrepareOutput(infos.data(), info_size, result_d, largest_key.get(),
+  InstallOutput(infos.data(), info_size, result_d, largest_key.get(),
                 smallest_key.get(), largest_seqno.data(), smallest_seqno.data(),
                 stream);
 
-  // GPU并行编码多SSTable
   for (size_t i = 0; i < info_size; ++i) {
     metas[i].largest.DecodeFrom(
         Slice(largest_key.get() + i * (keySize_ + 8), keySize_ + 8));

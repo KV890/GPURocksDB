@@ -3099,7 +3099,7 @@ TEST_P(WritePreparedTransactionTest, ReleaseEarliestSnapshotAfterSeqZeroing) {
   SyncPoint::GetInstance()->DisableProcessing();
   SyncPoint::GetInstance()->ClearAllCallBacks();
   SyncPoint::GetInstance()->SetCallBack(
-      "CompactionIterator::PrepareOutput:ZeroingSeq", [&](void* arg) {
+      "CompactionIterator::InstallOutput:ZeroingSeq", [&](void* arg) {
         const auto* const ikey =
             reinterpret_cast<const ParsedInternalKey*>(arg);
         assert(ikey);
@@ -3173,7 +3173,7 @@ TEST_P(WritePreparedTransactionTest, ReleaseEarliestSnapshotAfterSeqZeroing2) {
   ASSERT_OK(db->Flush(FlushOptions()));
 
   SyncPoint::GetInstance()->SetCallBack(
-      "CompactionIterator::PrepareOutput:ZeroingSeq", [&](void* arg) {
+      "CompactionIterator::InstallOutput:ZeroingSeq", [&](void* arg) {
         const auto* const ikey =
             reinterpret_cast<const ParsedInternalKey*>(arg);
         assert(ikey);

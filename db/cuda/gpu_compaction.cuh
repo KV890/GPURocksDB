@@ -62,7 +62,7 @@ __global__ void PrepareOutputKernel(SSTableInfo* info_d, size_t info_size,
                                     GPUKeyValue* result_d, char* largest_key_d,
                                     char* smallest_key_d);
 
-void PrepareOutput(SSTableInfo* info, size_t info_size,
+void InstallOutput(SSTableInfo* info, size_t info_size,
                    GPUKeyValue* key_value_d_tmp, char* largest_key,
                    char* smallest_key, uint64_t* largest_seqno,
                    uint64_t* smallest_seqno, cudaStream_t* stream);

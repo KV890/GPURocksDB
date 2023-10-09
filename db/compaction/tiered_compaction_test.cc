@@ -190,7 +190,7 @@ TEST_P(TieredCompactionTest, SequenceBasedTieredStorageUniversal) {
   std::vector<SequenceNumber> seq_history;
 
   SyncPoint::GetInstance()->SetCallBack(
-      "CompactionIterator::PrepareOutput.context", [&](void* arg) {
+      "CompactionIterator::InstallOutput.context", [&](void* arg) {
         auto context = static_cast<PerKeyPlacementContext*>(arg);
         context->output_to_penultimate_level =
             context->seq_num > latest_cold_seq;
@@ -354,7 +354,7 @@ TEST_P(TieredCompactionTest, RangeBasedTieredStorageUniversal) {
   std::string hot_end = Key(50);
 
   SyncPoint::GetInstance()->SetCallBack(
-      "CompactionIterator::PrepareOutput.context", [&](void* arg) {
+      "CompactionIterator::InstallOutput.context", [&](void* arg) {
         auto context = static_cast<PerKeyPlacementContext*>(arg);
         MutexLock l(&mutex);
         context->output_to_penultimate_level =
@@ -525,7 +525,7 @@ TEST_P(TieredCompactionTest, LevelColdRangeDelete) {
   std::atomic_uint64_t latest_cold_seq = 0;
 
   SyncPoint::GetInstance()->SetCallBack(
-      "CompactionIterator::PrepareOutput.context", [&](void* arg) {
+      "CompactionIterator::InstallOutput.context", [&](void* arg) {
         auto context = static_cast<PerKeyPlacementContext*>(arg);
         context->output_to_penultimate_level =
             context->seq_num > latest_cold_seq;
@@ -632,7 +632,7 @@ TEST_P(TieredCompactionTest, LevelOutofBoundaryRangeDelete) {
   std::atomic_uint64_t latest_cold_seq = 0;
 
   SyncPoint::GetInstance()->SetCallBack(
-      "CompactionIterator::PrepareOutput.context", [&](void* arg) {
+      "CompactionIterator::InstallOutput.context", [&](void* arg) {
         auto context = static_cast<PerKeyPlacementContext*>(arg);
         context->output_to_penultimate_level =
             context->seq_num > latest_cold_seq;
@@ -762,7 +762,7 @@ TEST_P(TieredCompactionTest, UniversalRangeDelete) {
   std::atomic_uint64_t latest_cold_seq = 0;
 
   SyncPoint::GetInstance()->SetCallBack(
-      "CompactionIterator::PrepareOutput.context", [&](void* arg) {
+      "CompactionIterator::InstallOutput.context", [&](void* arg) {
         auto context = static_cast<PerKeyPlacementContext*>(arg);
         context->output_to_penultimate_level =
             context->seq_num > latest_cold_seq;
@@ -893,7 +893,7 @@ TEST_P(TieredCompactionTest, SequenceBasedTieredStorageLevel) {
   std::vector<SequenceNumber> seq_history;
 
   SyncPoint::GetInstance()->SetCallBack(
-      "CompactionIterator::PrepareOutput.context", [&](void* arg) {
+      "CompactionIterator::InstallOutput.context", [&](void* arg) {
         auto context = static_cast<PerKeyPlacementContext*>(arg);
         context->output_to_penultimate_level =
             context->seq_num > latest_cold_seq;
@@ -1119,7 +1119,7 @@ TEST_P(TieredCompactionTest, RangeBasedTieredStorageLevel) {
   std::string hot_end = Key(50);
 
   SyncPoint::GetInstance()->SetCallBack(
-      "CompactionIterator::PrepareOutput.context", [&](void* arg) {
+      "CompactionIterator::InstallOutput.context", [&](void* arg) {
         auto context = static_cast<PerKeyPlacementContext*>(arg);
         MutexLock l(&mutex);
         context->output_to_penultimate_level =
