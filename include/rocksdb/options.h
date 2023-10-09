@@ -237,7 +237,6 @@ struct ColumnFamilyOptions : public AdvancedColumnFamilyOptions {
   //
   // Dynamically changeable through SetOptions() API
   int level0_file_num_compaction_trigger = 4;
-//  int level0_file_num_compaction_trigger = 8;
 
   // If non-nullptr, use the specified function to put keys in contiguous
   // groups called "prefixes". These prefixes are used to place one

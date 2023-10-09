@@ -343,30 +343,6 @@ int RunWithColumnFamily(utils::Properties props, const std::string &filename,
   return 0;
 }
 
-int main(const int argc, const char *argv[]) {
-  utils::Properties props;
-  string filename = ParseCommandLine(argc, argv, props);
-
-  size_t num_threads = std::stoull(props.GetProperty("threadcount", "1"));
-  size_t num_column_family =
-      std::stoull(props.GetProperty("num_column_family", "1"));
-  size_t batch_size = std::stoull(props.GetProperty("batch_size", "1"));
-  bool is_running = props.GetProperty("type", "load") == "run";
-
-  rocksdb::gpu_stats.OpenCuFileDriver();
-
-  if (num_column_family > 1 || batch_size > 1) {
-    RunWithColumnFamily(props, filename, num_threads, is_running,
-                               batch_size);
-  } else {
-    Run(props, filename, num_threads, is_running);
-  }
-
-  rocksdb::gpu_stats.CloseCuFileDriver();
-
-  return 0;
-}
-
 std::string ParseCommandLine(int argc, const char *argv[],
                              utils::Properties &props) {
   std::string filename;
@@ -516,4 +492,28 @@ void UsageMessage(const char *command) {
 
 inline bool StrStartWith(const char *str, const char *pre) {
   return strncmp(str, pre, strlen(pre)) == 0;
+}
+
+int main(const int argc, const char *argv[]) {
+  utils::Properties props;
+  string filename = ParseCommandLine(argc, argv, props);
+
+  size_t num_threads = std::stoull(props.GetProperty("threadcount", "1"));
+  size_t num_column_family =
+      std::stoull(props.GetProperty("num_column_family", "1"));
+  size_t batch_size = std::stoull(props.GetProperty("batch_size", "1"));
+  bool is_running = props.GetProperty("type", "load") == "run";
+
+  rocksdb::gpu_stats.OpenCuFileDriver();
+
+  if (num_column_family > 1 || batch_size > 1) {
+    RunWithColumnFamily(props, filename, num_threads, is_running,
+                        batch_size);
+  } else {
+    Run(props, filename, num_threads, is_running);
+  }
+
+  rocksdb::gpu_stats.CloseCuFileDriver();
+
+  return 0;
 }
