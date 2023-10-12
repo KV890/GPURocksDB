@@ -2486,7 +2486,8 @@ Status CompactionJob::GPUCompaction(const Compaction* compact) {
 
   compaction_stats_.SetMicros(db_options_.clock->NowMicros() - start_micros);
 
-  printf("Compaction time: %lu us\n", compaction_stats_.stats.micros);
+  printf("Outputs: %lu, Compaction time: %lu us\n", info_size,
+         compaction_stats_.stats.micros);
 
   compaction_stats_.AddCpuMicros(compaction_stats_.stats.micros);
 

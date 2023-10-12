@@ -81,15 +81,7 @@ int RocksDB::ReadBatch(std::vector<rocksdb::Slice> keys,
   std::vector<rocksdb::Status> status =
       db_->MultiGet(rocksdb::ReadOptions(), keys, &values);
 
-  int count = 0;
   for (const auto &s : status) {
-    count++;
-
-    if (values[count].empty()) {
-      std::string value;
-      db_->Get(rocksdb::ReadOptions(), keys[count], &value);
-    }
-
     if (s.IsNotFound()) {
       not_found_++;
     } else if (!s.ok()) {

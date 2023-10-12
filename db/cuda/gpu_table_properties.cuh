@@ -26,7 +26,7 @@
 namespace ROCKSDB_NAMESPACE {
 
 constexpr uint64_t MaxOutputFileSize = 128 << 20;
-constexpr uint32_t DataBlockSize = 4 * 1024;
+constexpr uint32_t DataBlockSize = 4096;
 constexpr uint32_t BlockRestartInterval = 16;
 // 在数据块的大小达到这个值之前，会继续插入键值对
 constexpr uint64_t BlockSizeDeviationLimit = 3687;

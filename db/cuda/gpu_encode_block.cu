@@ -1404,18 +1404,22 @@ void BuildSSTables(
   for (size_t i = 0; i < num_outputs - 1; ++i) {
     char* current_file_buffer = all_files_buffer_d + estimate_file_size * i;
     thread_pool_for_gpu.emplace_back(&WriteOtherBlocks, current_file_buffer,
-                                     compaction_job, compact, file_writes[i],
                                      tbs[i], &metas[i], &tps[i], &infos[i],
-                                     data_size, index_size);
+                                     data_size, filter_size, index_size);
+
+    WriteSSTable(current_file_buffer, file_writes[i]->file_name(),
+                 infos[i].file_size);
   }
 
   char* current_file_buffer =
       all_files_buffer_d + estimate_file_size * (num_outputs - 1);
-  WriteOtherBlocks(current_file_buffer, compaction_job, compact,
-                   file_writes[num_outputs - 1], tbs[num_outputs - 1],
+  WriteOtherBlocks(current_file_buffer, tbs[num_outputs - 1],
                    &metas[num_outputs - 1], &tps[num_outputs - 1],
                    &infos[num_outputs - 1], data_size_last_file,
-                   index_size_last_file);*/
+                   filter_size_last_file, index_size_last_file);
+
+  WriteSSTable(current_file_buffer, file_writes[num_outputs - 1]->file_name(),
+               infos[num_outputs - 1].file_size);*/
 
   // 方法2
   /*for (size_t i = 0; i < num_outputs - 1; ++i) {
@@ -1438,25 +1442,23 @@ void BuildSSTables(
                infos[num_outputs - 1].file_size);*/
 
   // 方法3
+  const size_t num_threads = 3;
   std::vector<std::thread> thread_pool;
 
-  // 计算每个线程应处理的任务数量
-  size_t outputs_per_thread = num_outputs / 4;
+  size_t chunk_size = num_outputs / (num_threads + 1);
+  size_t remainder = num_outputs % (num_threads + 1);
 
-  if (outputs_per_thread > 0) {
-    thread_pool.reserve(3);
+  if (chunk_size > 0) {
+    thread_pool.reserve(num_threads);
 
-    for (int j = 0; j < 3; ++j) {
-      // 每个线程处理 outputs_per_thread个输出，
-      // 如果还有剩余的输出，额外分配一个给当前线程
-      size_t start_index = j * outputs_per_thread;
-      size_t end_index = start_index + outputs_per_thread;
+    size_t start = 0;
+    for (size_t i = 0; i < num_threads; ++i) {
+      size_t end = start + chunk_size + (i < remainder ? 1 : 0);
 
       thread_pool.emplace_back([&all_files_buffer_d, &file_writes, &tbs, &metas,
                                 &tps, &infos, &data_size, &filter_size,
-                                &index_size, start_index, end_index,
-                                &estimate_file_size] {
-        for (size_t i = start_index; i < end_index; ++i) {
+                                &index_size, start, end, &estimate_file_size] {
+        for (size_t i = start; i < end; ++i) {
           char* current_file_buffer =
               all_files_buffer_d + estimate_file_size * i;
           WriteOtherBlocks(current_file_buffer, tbs[i], &metas[i], &tps[i],
@@ -1466,10 +1468,13 @@ void BuildSSTables(
                        infos[i].file_size);
         }
       });
+
+      start = end;
     }
   }
 
-  for (size_t i = 3 * outputs_per_thread; i < num_outputs - 1; ++i) {
+  for (size_t i = chunk_size > 0 ? num_threads * chunk_size + remainder : 0;
+       i < num_outputs - 1; ++i) {
     char* current_file_buffer = all_files_buffer_d + estimate_file_size * i;
     WriteOtherBlocks(current_file_buffer, tbs[i], &metas[i], &tps[i], &infos[i],
                      data_size, filter_size, index_size);
