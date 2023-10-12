@@ -1181,11 +1181,6 @@ void BuildSSTables(
     cudaStream_t* stream) {
   size_t num_outputs = infos.size();  // 需要编码的文件数
 
-  //  cudaEvent_t start, end;
-  //  cudaEventCreate(&start);
-  //  cudaEventCreate(&end);
-  //  float elapsed_time;
-
   uint32_t num_restarts = infos[0].num_restarts;  // 非最后一块的restarts数量
   uint32_t num_restarts_last_data_block_last_file =
       infos[num_outputs - 1]
@@ -1400,13 +1395,6 @@ void BuildSSTables(
       end_time - start_time);
 
   gpu_stats.gpu_all_micros += duration.count();
-
-  auto* filter_block_h = new uint32_t[total_num_kv];
-  auto* key_values_h = new GPUKeyValue[total_num_kv];
-  cudaMemcpy(filter_block_h, filter_block_d, total_num_kv * sizeof(uint32_t),
-             cudaMemcpyDeviceToHost);
-  cudaMemcpy(key_values_h, key_values_d, total_num_kv * sizeof(GPUKeyValue),
-             cudaMemcpyDeviceToHost);
 
   // 写SSTable
   // 方法1
