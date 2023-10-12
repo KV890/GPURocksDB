@@ -42,7 +42,7 @@ int DelegateClient(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const size_t num_ops,
     if (is_loading) {
       oks += client.DoInsert(is_running);
     } else {
-      oks += client.DoTransaction();
+      //      oks += client.DoTransaction();
     }
 
     if (oks >= ops_stage) {
@@ -209,7 +209,13 @@ size_t DelegateClientBatch(ycsbc::DB *db, ycsbc::CoreWorkload *wl,
     }
   } else {
     while (oks < num_ops) {
-      oks += client.DoTransaction();
+      rocksdb::WriteBatch batch_update;
+      rocksdb::WriteBatch batch_insert;
+      std::vector<rocksdb::Slice> keys;
+      std::vector<std::string> values;
+
+      oks += client.DoTransaction(batch_update, batch_insert, keys, values,
+                                  batch_size);
 
       if (oks >= ops_stage) {
         if (ops_stage < 1000)
@@ -276,9 +282,15 @@ int RunBatch(utils::Properties props, const std::string &filename,
   if (!is_running) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
-    db->PrintMyStats();
     rocksdb::gpu_stats.PrintStats();
     rocksdb::gpu_stats.ResetStats();
+
+    cerr << "\n----------------------Loading-----------------------" << endl;
+    cerr << "Loading records : " << sum << endl;
+    cerr << "Loading duration: " << duration_load << " sec" << endl;
+    cerr << "Loading throughput (KTPS): "
+         << static_cast<double>(total_ops) / duration_load / 1000 << endl;
+    cerr << "----------------------------------------------------" << endl;
 
     std::this_thread::sleep_for(std::chrono::seconds(1));
   }
@@ -320,9 +332,9 @@ int RunBatch(utils::Properties props, const std::string &filename,
   cerr << "Number of threads: " << num_threads << endl;
 
   if (!is_running) {
-    cerr << "---------------------Loading-----------------------" << endl;
+    cerr << "----------------------Loading-----------------------" << endl;
     cerr << "Loading records : " << sum << endl;
-    cerr << "Loading duration: " << duration_load << endl;
+    cerr << "Loading duration: " << duration_load << " sec" << endl;
     cerr << "Loading throughput (KTPS): "
          << static_cast<double>(total_ops) / duration_load / 1000 << endl;
     cerr << "----------------------------------------------------" << endl;
@@ -333,7 +345,7 @@ int RunBatch(utils::Properties props, const std::string &filename,
        << std::stod(props[ycsbc::CoreWorkload::READ_PROPORTION_PROPERTY])
        << endl;
   cerr << "Transactions records : " << sum_transaction << endl;
-  cerr << "Transactions duration: " << duration << endl;
+  cerr << "Transactions duration: " << duration << " sec" << endl;
   cerr << "Transaction throughput (KTPS): "
        << static_cast<double>(num_ops) / duration / 1000 << endl;
   cerr << "----------------------------------------------------" << endl;

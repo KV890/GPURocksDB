@@ -12,6 +12,7 @@
 
 #include "counter_generator.h"
 #include "db.h"
+#include "db/cuda/gpu_options.cuh"
 #include "discrete_generator.h"
 #include "generator.h"
 #include "properties.h"
@@ -142,8 +143,8 @@ class CoreWorkload {
   virtual std::string NextFieldName();
   virtual size_t NextScanLength() { return scan_len_chooser_->Next(); }
 
-  bool read_all_fields() const { return read_all_fields_; }
-  bool write_all_fields() const { return write_all_fields_; }
+  [[nodiscard]] bool read_all_fields() const { return read_all_fields_; }
+  [[nodiscard]] bool write_all_fields() const { return write_all_fields_; }
 
   CoreWorkload()
       : field_count_(0),
@@ -215,7 +216,11 @@ inline std::string CoreWorkload::BuildKeyName(uint64_t key_num) const {
   std::string key_str = "user";
   key_str += std::to_string(key_num);
 
-  return key_str.substr(0, 16);
+  while (key_str.size() < rocksdb::keySize_) {
+    key_str += '\0';
+  }
+
+  return key_str.substr(0, rocksdb::keySize_);
 }
 
 inline std::string CoreWorkload::NextFieldName() {

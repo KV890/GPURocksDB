@@ -19,12 +19,17 @@ class RocksDB : public DB {
            const std::vector<std::string> *fields,
            std::vector<KVPair> &result) override;
 
+  int ReadBatch(std::vector<rocksdb::Slice> keys,
+                std::vector<std::string>& values) override;
+
   int Scan(const std::string &table, const std::string &key, int len,
            const std::vector<std::string> *fields,
            std::vector<std::vector<KVPair>> &result) override;
 
   int Update(const std::string &table, const std::string &key,
              std::vector<KVPair> &values) override;
+
+  int UpdateBatch(rocksdb::WriteBatch batch) override;
 
   int Insert(const std::string &table, const std::string &key,
              std::vector<KVPair> &values) override;

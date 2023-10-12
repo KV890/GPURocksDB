@@ -279,6 +279,8 @@ void GPUWriteBlock(char** buffer_d, const Slice& block_contents,
                               checksum);
 
   new_offset = last_offset + block_contents.size() + 5;
+
+  cudaFree(block_d);
 }
 
 [[maybe_unused]] void BuildPropertiesBlock(
@@ -349,8 +351,8 @@ void GPUWriteBlock(char** buffer_d, const Slice& block_contents,
 void GPUBuildPropertiesBlock(
     char** buffer_d, FileMetaData* meta,
     const std::shared_ptr<TableBuilderOptions>& tboptions, size_t data_size,
-    size_t index_size, MetaIndexBuilder* metaIndexBuilder, size_t& new_offset,
-    TableProperties* props) {
+    size_t filter_size, size_t index_size, MetaIndexBuilder* metaIndexBuilder,
+    size_t& new_offset, TableProperties* props) {
   BlockHandle properties_block_handle;
   PropertyBlockBuilder propertyBlockBuilder;
 
@@ -360,8 +362,10 @@ void GPUBuildPropertiesBlock(
   props->raw_value_size = meta->raw_value_size;
   props->num_data_blocks = meta->num_data_blocks;
   props->num_entries = meta->num_entries;
-  props->filter_policy_name = "";
-  props->index_size = index_size;
+  props->filter_policy_name = "bloomfilter";
+  props->filter_size = filter_size - 5;
+  props->num_filter_entries = meta->num_entries;
+  props->index_size = index_size - 5;
 
   props->creation_time = meta->file_creation_time;
   props->oldest_key_time = meta->oldest_ancester_time;
@@ -370,7 +374,6 @@ void GPUBuildPropertiesBlock(
   props->db_id = tboptions->db_id;
   props->db_session_id = tboptions->db_session_id;
 
-  props->filter_policy_name = "";
   props->compression_name = "NoCompression";
   props->compression_options =
       "window_bits=-14; level=32767; strategy=0; max_dict_bytes=0; "
@@ -405,7 +408,7 @@ void GPUBuildPropertiesBlock(
   Slice block_data = propertyBlockBuilder.Finish();
 
   GPUWriteBlock(buffer_d, block_data, &properties_block_handle,
-                data_size + index_size, new_offset);
+                data_size + filter_size + index_size, new_offset);
 
   const std::string* properties_block_meta = &kPropertiesBlockName;
   metaIndexBuilder->Add(*properties_block_meta, properties_block_handle);
@@ -431,8 +434,8 @@ void GPUBuildMetaIndexBlock(char** buffer_d, MetaIndexBuilder* metaIndexBuilder,
                 new_offset);
 }
 
-__global__ void BuilderFooterKernel([[maybe_unused]] char* buffer_d,
-                                    char* footer_d, size_t footer_size) {
+__global__ void BuilderFooterKernel(char* buffer_d, char* footer_d,
+                                    size_t footer_size) {
   memcpy(buffer_d, footer_d, footer_size);
 }
 
@@ -689,8 +692,9 @@ char* BuildSSTable(const GPUKeyValue* keyValues, InputFile* inputFiles_d,
 __device__ void BeginBuildDataBlock(
     uint32_t file_idx, uint32_t block_idx, char* current_block_buffer,
     GPUKeyValue* key_values_d, InputFile* input_files_d, char* index_keys_d,
-    size_t num_kv_current_data_block, uint32_t num_current_restarts,
-    uint32_t* current_restarts, size_t size_current_data_block) {
+    uint32_t* filter_block_d, size_t num_kv_current_data_block,
+    uint32_t num_current_restarts, uint32_t* current_restarts,
+    size_t size_current_data_block) {
   size_t shared = 0;
   size_t non_shared = keySize_ + 8;
   size_t encoded_size;
@@ -701,13 +705,23 @@ __device__ void BeginBuildDataBlock(
         static_cast<uint32_t>(shared), static_cast<uint32_t>(non_shared),
         static_cast<uint32_t>(valueSize_), encoded_size);
     memcpy(current_block_buffer + key_value_size * i + encoded_size,
-           key_values_d[file_idx * total_num_kv_front_file_d +
+           key_values_d[file_idx * num_kv_front_file_d +
                         num_kv_data_block_d * block_idx + i]
                .key,
            non_shared);
 
+    // 过滤块
+    uint32_t hash =
+        GPUBloomHash(key_values_d[file_idx * num_kv_front_file_d +
+                                  num_kv_data_block_d * block_idx + i]
+                         .key,
+                     keySize_);
+
+    filter_block_d[file_idx * num_kv_front_file_d +
+                   num_kv_data_block_d * block_idx + i] = hash;
+
     ExtractOriginalValue(
-        key_values_d[file_idx * total_num_kv_front_file_d +
+        key_values_d[file_idx * num_kv_front_file_d +
                      num_kv_data_block_d * block_idx + i],
         input_files_d, num_files_d,
         current_block_buffer + key_value_size * i + encoded_size + non_shared);
@@ -716,7 +730,7 @@ __device__ void BeginBuildDataBlock(
   // 每个索引项中的key
   // num_data_block_d 指的是前面的文件的数据块数量
   memcpy(index_keys_d + (file_idx * num_data_block_d + block_idx) * keySize_,
-         key_values_d[file_idx * total_num_kv_front_file_d +
+         key_values_d[file_idx * num_kv_front_file_d +
                       num_kv_data_block_d * block_idx +
                       (num_kv_current_data_block - 1)]
              .key,
@@ -747,7 +761,8 @@ __device__ void BeginBuildDataBlock(
 __global__ void BuildDataBlocksFrontFileKernel(char* buffer_d,
                                                GPUKeyValue* key_values_d,
                                                InputFile* input_files_d,
-                                               char* index_keys_d) {
+                                               char* index_keys_d,
+                                               uint32_t* filter_block_d) {
   uint32_t file_idx = threadIdx.x;
   uint32_t block_idx = blockIdx.x;
 
@@ -755,15 +770,16 @@ __global__ void BuildDataBlocksFrontFileKernel(char* buffer_d,
                                block_idx * size_complete_data_block_d;
 
   BeginBuildDataBlock(file_idx, block_idx, current_block_buffer, key_values_d,
-                      input_files_d, index_keys_d, num_kv_data_block_d,
-                      num_restarts_d, const_restarts_d,
+                      input_files_d, index_keys_d, filter_block_d,
+                      num_kv_data_block_d, num_restarts_d, const_restarts_d,
                       size_complete_data_block_d);
 }
 
 __global__ void BuildDataBlocksLastFileKernel(char* buffer_d,
                                               GPUKeyValue* key_values_d,
                                               InputFile* input_files_d,
-                                              char* index_keys_d) {
+                                              char* index_keys_d,
+                                              uint32_t* filter_block_d) {
   uint32_t file_idx = num_outputs_d - 1;
   uint32_t block_idx = blockIdx.x;
 
@@ -771,15 +787,15 @@ __global__ void BuildDataBlocksLastFileKernel(char* buffer_d,
                                block_idx * size_complete_data_block_d;
 
   BeginBuildDataBlock(file_idx, block_idx, current_block_buffer, key_values_d,
-                      input_files_d, index_keys_d, num_kv_data_block_d,
-                      num_restarts_d, const_restarts_d,
+                      input_files_d, index_keys_d, filter_block_d,
+                      num_kv_data_block_d, num_restarts_d, const_restarts_d,
                       size_complete_data_block_d);
 }
 
 __global__ void BuildLastDataBlockLastFileKernel(
     char* buffer_d, GPUKeyValue* key_values_d, InputFile* input_files_d,
-    char* index_keys_d, size_t num_data_block_last_file,
-    size_t num_kv_last_data_block_last_file,
+    char* index_keys_d, uint32_t* filter_block_d,
+    size_t num_data_block_last_file, size_t num_kv_last_data_block_last_file,
     uint32_t num_restarts_last_data_block_last_file,
     uint32_t* restarts_last_data_block_last_file_d,
     size_t size_incomplete_data_block) {
@@ -791,13 +807,14 @@ __global__ void BuildLastDataBlockLastFileKernel(
 
   BeginBuildDataBlock(
       file_idx, block_idx, current_block_buffer, key_values_d, input_files_d,
-      index_keys_d, num_kv_last_data_block_last_file,
+      index_keys_d, filter_block_d, num_kv_last_data_block_last_file,
       num_restarts_last_data_block_last_file,
       restarts_last_data_block_last_file_d, size_incomplete_data_block);
 }
 
 void BuildDataBlocks(char** buffer_d, GPUKeyValue* key_values_d,
                      InputFile* input_files_d, char* index_keys_d,
+                     uint32_t* filter_block_d,
                      size_t size_incomplete_data_block,
                      size_t num_data_block_front_file,
                      size_t num_data_block_last_file,
@@ -810,7 +827,7 @@ void BuildDataBlocks(char** buffer_d, GPUKeyValue* key_values_d,
     dim3 grid(num_data_block_front_file);
 
     BuildDataBlocksFrontFileKernel<<<grid, block, 0, stream[3]>>>(
-        *buffer_d, key_values_d, input_files_d, index_keys_d);
+        *buffer_d, key_values_d, input_files_d, index_keys_d, filter_block_d);
   }
 
   if (num_kv_last_data_block_last_file == 0) {
@@ -818,20 +835,104 @@ void BuildDataBlocks(char** buffer_d, GPUKeyValue* key_values_d,
     dim3 grid(num_data_block_last_file);
 
     BuildDataBlocksLastFileKernel<<<grid, block, 0, stream[4]>>>(
-        *buffer_d, key_values_d, input_files_d, index_keys_d);
+        *buffer_d, key_values_d, input_files_d, index_keys_d, filter_block_d);
   } else {
     dim3 block(1);
     dim3 grid(num_data_block_last_file - 1);
 
     BuildDataBlocksLastFileKernel<<<grid, block, 0, stream[4]>>>(
-        *buffer_d, key_values_d, input_files_d, index_keys_d);
+        *buffer_d, key_values_d, input_files_d, index_keys_d, filter_block_d);
 
     BuildLastDataBlockLastFileKernel<<<1, 1, 0, stream[5]>>>(
-        *buffer_d, key_values_d, input_files_d, index_keys_d,
+        *buffer_d, key_values_d, input_files_d, index_keys_d, filter_block_d,
         num_data_block_last_file, num_kv_last_data_block_last_file,
         num_restarts_last_data_block_last_file,
         restarts_last_data_block_last_file_d, size_incomplete_data_block);
   }
+}
+
+__device__ void BeginBuildFilterBlock(uint32_t file_idx, size_t current_num_kv,
+                                      char* current_buffer,
+                                      const uint32_t* filter_block_d,
+                                      uint32_t num_lines) {
+  const int log2_cache_line_bits = 9;
+
+  for (uint32_t i = 0; i < current_num_kv; ++i) {
+    uint32_t hash = filter_block_d[file_idx * num_kv_front_file_d + i];
+
+    char* data_at_offset = current_buffer + ((hash % num_lines) << 6);
+
+    const uint32_t delta = (hash >> 17) | (hash << 15);
+    for (int j = 0; j < 6; ++j) {
+      // Mask to bit-within-cache-line address
+      const uint32_t bitpos = hash & ((1 << log2_cache_line_bits) - 1);
+      data_at_offset[bitpos / 8] |= (1 << (bitpos % 8));
+      hash += delta;
+    }
+  }
+}
+
+__global__ void BuildFilterBlockKernel(char* buffer_d,
+                                       uint32_t* filter_block_d) {
+  uint32_t file_idx = threadIdx.x;
+
+  size_t current_data_size = data_size_d;
+  size_t current_num_kv = num_kv_front_file_d;
+  size_t current_num_lines = num_lines_d;
+  if (file_idx == num_outputs_d - 1) {
+    current_data_size = data_size_last_file_d;
+    current_num_kv = num_kv_last_file_d;
+    current_num_lines = num_lines_last_file_d;
+  }
+
+  char* current_buffer =
+      buffer_d + file_idx * size_front_file_d + current_data_size;
+
+  BeginBuildFilterBlock(file_idx, current_num_kv, current_buffer,
+                        filter_block_d, current_num_lines);
+}
+
+__global__ void BuildFilterBlockMetadata(char* buffer_d,
+                                         uint32_t total_bits_front_file,
+                                         uint32_t total_bits_last_file) {
+  uint32_t file_idx = threadIdx.x;
+
+  size_t current_data_size = data_size_d;
+  size_t current_filter_size = filter_size_d;
+  size_t current_num_lines = num_lines_d;
+  size_t current_total_bits = total_bits_front_file;
+  if (file_idx == num_outputs_d - 1) {
+    current_data_size = data_size_last_file_d;
+    current_filter_size = filter_size_last_file_d;
+    current_num_lines = num_lines_last_file_d;
+    current_total_bits = total_bits_last_file;
+  }
+
+  char* data = buffer_d + file_idx * size_front_file_d + current_data_size;
+
+  data[current_total_bits / 8] = static_cast<char>(6);
+  GPUEncodeFixed32(data + current_total_bits / 8 + 1,
+                   static_cast<uint32_t>(current_num_lines));
+
+  char trailer[5];
+  char type = 0x0;
+  trailer[0] = type;
+  uint32_t checksum = GPUComputeBuiltinChecksumWithLastByte(
+      data, current_filter_size - 5, type);
+  GPUEncodeFixed32(trailer + 1, checksum);
+
+  memcpy(data + current_filter_size - 5, trailer, 5);
+}
+
+void BuildFilterBlocks(char** buffer_d, uint32_t* filter_block_d,
+                       size_t num_outputs, uint32_t total_bits_front_file,
+                       uint32_t total_bits_last_file, cudaStream_t* stream) {
+  dim3 block(num_outputs);
+
+  BuildFilterBlockKernel<<<1, block, 0, stream[6]>>>(*buffer_d, filter_block_d);
+
+  BuildFilterBlockMetadata<<<1, block, 0, stream[7]>>>(
+      *buffer_d, total_bits_front_file, total_bits_last_file);
 }
 
 __device__ void BeginBuildIndexBlock(uint32_t file_idx, uint32_t block_idx,
@@ -874,7 +975,7 @@ __global__ void BuildIndexBlockFrontFileKernel(
   uint32_t block_idx = blockIdx.x;
 
   char* current_index_buffer =
-      buffer_d + file_idx * size_front_file_d + data_size_d;
+      buffer_d + file_idx * size_front_file_d + data_size_d + filter_size_d;
 
   BeginBuildIndexBlock(file_idx, block_idx, current_index_buffer, index_keys_d,
                        block_handles_d, restarts_for_index_front_file_d,
@@ -887,8 +988,8 @@ __global__ void BuildIndexBlockLastFileKernel(
   uint32_t file_idx = num_outputs_d - 1;
   uint32_t block_idx = blockIdx.x;
 
-  char* current_index_buffer =
-      buffer_d + file_idx * size_front_file_d + data_size_last_file_d;
+  char* current_index_buffer = buffer_d + file_idx * size_front_file_d +
+                               data_size_last_file_d + filter_size_last_file_d;
 
   BeginBuildIndexBlock(file_idx, block_idx, current_index_buffer, index_keys_d,
                        block_handles_d, restarts_for_index_last_file_d,
@@ -913,8 +1014,8 @@ __device__ void BeginComputeChecksum(char* current_buffer,
 __global__ void ComputeChecksumFrontFileKernel(char* buffer_d) {
   uint32_t file_idx = threadIdx.x;
 
-  char* current_buffer =
-      buffer_d + file_idx * size_front_file_d + data_size_d + index_size_d;
+  char* current_buffer = buffer_d + file_idx * size_front_file_d + data_size_d +
+                         filter_size_d + index_size_d;
 
   BeginComputeChecksum(current_buffer, num_data_block_d, index_size_d);
 }
@@ -925,7 +1026,8 @@ __global__ void ComputeChecksumLastFileKernel(char* buffer_d,
   uint32_t file_idx = num_outputs_d - 1;
 
   char* current_buffer = buffer_d + file_idx * size_front_file_d +
-                         data_size_last_file_d + index_size_last_file;
+                         data_size_last_file_d + filter_size_last_file_d +
+                         index_size_last_file;
 
   BeginComputeChecksum(current_buffer, num_data_block_last_file,
                        index_size_last_file);
@@ -978,53 +1080,61 @@ void BuildIndexBlocks(char** buffer_d, char* index_keys_d,
     dim3 block(num_outputs - 1);
     dim3 grid(num_data_block_front_file);
 
-    ComputeDataBlockHandleFrontFileKernel<<<grid, block, 0, stream[6]>>>(
+    ComputeDataBlockHandleFrontFileKernel<<<grid, block, 0, stream[3]>>>(
         block_handles_d, restarts_for_index_front_file_d);
 
     // 第二个核函数需要第一个核函数的结果，它们使用同一个流，所以不需要进行同步
-    BuildIndexBlockFrontFileKernel<<<grid, block, 0, stream[6]>>>(
+    BuildIndexBlockFrontFileKernel<<<grid, block, 0, stream[3]>>>(
         *buffer_d, index_keys_d, block_handles_d,
         restarts_for_index_front_file_d);
 
-    ComputeChecksumFrontFileKernel<<<1, num_outputs - 1, 0, stream[6]>>>(
+    ComputeChecksumFrontFileKernel<<<1, num_outputs - 1, 0, stream[3]>>>(
         *buffer_d);
   }
 
   dim3 block(1);
   dim3 grid(num_data_block_last_file);
 
-  ComputeDataBlockHandleLastFileKernel<<<grid, block, 0, stream[7]>>>(
+  ComputeDataBlockHandleLastFileKernel<<<grid, block, 0, stream[4]>>>(
       block_handles_d, restarts_for_index_last_file_d,
       size_incomplete_data_block, num_data_block_last_file);
 
-  BuildIndexBlockLastFileKernel<<<grid, block, 0, stream[7]>>>(
+  BuildIndexBlockLastFileKernel<<<grid, block, 0, stream[4]>>>(
       *buffer_d, index_keys_d, block_handles_d, restarts_for_index_last_file_d,
       num_data_block_last_file);
 
-  ComputeChecksumLastFileKernel<<<1, 1, 0, stream[7]>>>(
+  ComputeChecksumLastFileKernel<<<1, 1, 0, stream[4]>>>(
       *buffer_d, num_data_block_last_file, index_size_last_file);
 }
 
 void WriteOtherBlocks(char* buffer_d,
                       const std::shared_ptr<TableBuilderOptions>& tbs,
                       FileMetaData* meta, TableProperties* tp,
-                      SSTableInfo* info, size_t data_size, size_t index_size) {
+                      SSTableInfo* info, size_t data_size, size_t filter_size,
+                      size_t index_size) {
   meta->num_entries = info->total_num_kv;
   meta->num_data_blocks = info->num_data_block;
   meta->raw_key_size = (keySize_ + 8) * info->total_num_kv;
   meta->raw_value_size = valueSize_ * info->total_num_kv;
 
-  BlockHandle meta_index_block_handle, index_block_handle;
+  BlockHandle meta_index_block_handle, index_block_handle, filter_block_handle;
   MetaIndexBuilder meta_index_builder;
 
-  char* new_buffer = buffer_d + data_size + index_size;
+  filter_block_handle.set_offset(data_size);
+  filter_block_handle.set_size(filter_size - 5);
+
+  std::string key = "fullfilter.";
+  key.append("rocksdb.BuiltinBloomFilter");
+  meta_index_builder.Add(key, filter_block_handle);
+
+  char* new_buffer = buffer_d + data_size + filter_size + index_size;
 
   size_t new_offset;
 
-  GPUBuildPropertiesBlock(&new_buffer, meta, tbs, data_size, index_size,
-                          &meta_index_builder, new_offset, tp);
+  GPUBuildPropertiesBlock(&new_buffer, meta, tbs, data_size, filter_size,
+                          index_size, &meta_index_builder, new_offset, tp);
 
-  size_t props_size = new_offset - data_size - index_size;
+  size_t props_size = new_offset - data_size - filter_size - index_size;
   new_buffer += props_size;
 
   size_t last_offset = new_offset;
@@ -1032,7 +1142,7 @@ void WriteOtherBlocks(char* buffer_d,
   GPUBuildMetaIndexBlock(&new_buffer, &meta_index_builder,
                          &meta_index_block_handle, last_offset, new_offset);
 
-  index_block_handle.set_offset(data_size);
+  index_block_handle.set_offset(data_size + filter_size);
   index_block_handle.set_size(index_size - 5);
 
   size_t meta_index_size = new_offset - last_offset;
@@ -1115,41 +1225,62 @@ void BuildSSTables(
   // data_size + index_size + 2048 - (data_size + index_size) % 2048
 
   // 非最后一个SSTable的数据块、索引块和所有块的总大小
+  uint32_t total_bits_front_file, num_lines_front_file;
+
   size_t data_size = 0;
   size_t index_size = 0;
+  size_t filter_size = 0;
   size_t estimate_file_size = 0;
 
-  size_t total_num_kv_front_file = 0;
+  size_t num_kv_front_file = 0;
   size_t num_data_block_front_file = 0;
 
   if (num_outputs > 1) {
-    total_num_kv_front_file = infos[0].total_num_kv;
+    num_kv_front_file = infos[0].total_num_kv;
     num_data_block_front_file = infos[0].num_data_block;
 
     data_size = num_data_block_front_file * size_complete_data_block;
     index_size =
         num_data_block_front_file * (size_index_entry + sizeof(uint32_t)) +
         sizeof(uint32_t) + 5;
-    estimate_file_size =
-        data_size + index_size + 2048 - (data_size + index_size) % 1024;
+    filter_size = MyCalculateSpace(num_kv_front_file, &total_bits_front_file,
+                                   &num_lines_front_file) +
+                  5;
+
+    estimate_file_size = data_size + index_size + filter_size + 4096 -
+                         (data_size + index_size + filter_size) % 1024;
   }
 
   // 最后一个SSTable的数据块、索引块和所有块的总大小
+  uint32_t total_bits_last_file, num_lines_last_file;
+
+  size_t num_kv_last_file = infos[num_outputs - 1].total_num_kv;
+
   size_t data_size_last_file =
       (num_data_block_last_file - 1) * size_complete_data_block +
       size_incomplete_data_block;
   size_t index_size_last_file =
       num_data_block_last_file * (size_index_entry + sizeof(uint32_t)) +
       sizeof(uint32_t) + 5;
+  size_t filter_size_last_file =
+      MyCalculateSpace(num_kv_last_file, &total_bits_last_file,
+                       &num_lines_last_file) +
+      5;
+
   size_t estimate_last_file_size =
-      data_size_last_file + index_size_last_file + 2048 -
-      (data_size_last_file + index_size_last_file) % 1024;
+      data_size_last_file + index_size_last_file + filter_size_last_file +
+      4096 -
+      (data_size_last_file + index_size_last_file + filter_size_last_file) %
+          1024;
 
   total_estimate_file_size =
       (num_outputs - 1) * estimate_file_size + estimate_last_file_size;
 
   total_num_all_data_blocks =
       (num_outputs - 1) * num_data_block_front_file + num_data_block_last_file;
+
+  size_t total_num_kv =
+      (num_outputs - 1) * num_kv_front_file + num_kv_last_file;
 
   // 申请主机内存
   // 非最后一个数据块的restarts
@@ -1171,6 +1302,8 @@ void BuildSSTables(
   char* all_files_buffer_d;
   char* index_keys_d;
   uint32_t* restarts_last_data_block_last_file_d;
+  uint32_t* filter_block_d;
+
   // 索引块
   GPUBlockHandle* block_handles_d;
   uint32_t* restarts_for_index_front_file_d;
@@ -1182,13 +1315,14 @@ void BuildSSTables(
   cudaMallocAsync(&restarts_last_data_block_last_file_d,
                   num_restarts_last_data_block_last_file * sizeof(uint32_t),
                   stream[5]);
+  cudaMallocAsync(&filter_block_d, total_num_kv * sizeof(uint32_t), stream[6]);
   cudaMallocAsync(&block_handles_d,
                   total_num_all_data_blocks * sizeof(GPUBlockHandle),
-                  stream[6]);
+                  stream[7]);
   cudaMallocAsync(&restarts_for_index_front_file_d,
-                  num_data_block_front_file * sizeof(uint32_t), stream[7]);
+                  num_data_block_front_file * sizeof(uint32_t), stream[3]);
   cudaMallocAsync(&restarts_for_index_last_file_d,
-                  num_data_block_last_file * sizeof(uint32_t), stream[5]);
+                  num_data_block_last_file * sizeof(uint32_t), stream[4]);
 
   //  cudaEventRecord(start, nullptr);
   // 数据传输
@@ -1202,18 +1336,29 @@ void BuildSSTables(
                           cudaMemcpyHostToDevice, stream[5]);
   cudaMemcpyToSymbolAsync(size_complete_data_block_d, &size_complete_data_block,
                           sizeof(size_t), 0, cudaMemcpyHostToDevice, stream[6]);
-  cudaMemcpyToSymbolAsync(total_num_kv_front_file_d, &total_num_kv_front_file,
+  cudaMemcpyToSymbolAsync(num_kv_front_file_d, &num_kv_front_file,
                           sizeof(size_t), 0, cudaMemcpyHostToDevice, stream[7]);
+  cudaMemcpyToSymbolAsync(num_kv_last_file_d, &num_kv_last_file, sizeof(size_t),
+                          0, cudaMemcpyHostToDevice, stream[3]);
   cudaMemcpyToSymbolAsync(size_front_file_d, &estimate_file_size,
-                          sizeof(size_t), 0, cudaMemcpyHostToDevice, stream[3]);
+                          sizeof(size_t), 0, cudaMemcpyHostToDevice, stream[4]);
   cudaMemcpyToSymbolAsync(num_outputs_d, &num_outputs, sizeof(size_t), 0,
-                          cudaMemcpyHostToDevice, stream[4]);
-  cudaMemcpyToSymbolAsync(data_size_d, &data_size, sizeof(size_t), 0,
                           cudaMemcpyHostToDevice, stream[5]);
+  cudaMemcpyToSymbolAsync(data_size_d, &data_size, sizeof(size_t), 0,
+                          cudaMemcpyHostToDevice, stream[6]);
   cudaMemcpyToSymbolAsync(data_size_last_file_d, &data_size_last_file,
-                          sizeof(size_t), 0, cudaMemcpyHostToDevice, stream[6]);
+                          sizeof(size_t), 0, cudaMemcpyHostToDevice, stream[7]);
   cudaMemcpyToSymbolAsync(index_size_d, &index_size, sizeof(size_t), 0,
-                          cudaMemcpyHostToDevice, stream[7]);
+                          cudaMemcpyHostToDevice, stream[3]);
+  cudaMemcpyToSymbolAsync(num_lines_d, &num_lines_front_file, sizeof(uint32_t),
+                          0, cudaMemcpyHostToDevice, stream[4]);
+  cudaMemcpyToSymbolAsync(num_lines_last_file_d, &num_lines_last_file,
+                          sizeof(uint32_t), 0, cudaMemcpyHostToDevice,
+                          stream[5]);
+  cudaMemcpyToSymbolAsync(filter_size_d, &filter_size, sizeof(size_t), 0,
+                          cudaMemcpyHostToDevice, stream[6]);
+  cudaMemcpyToSymbolAsync(filter_size_last_file_d, &filter_size_last_file,
+                          sizeof(size_t), 0, cudaMemcpyHostToDevice, stream[7]);
 
   // 全局内存
   CHECK(cudaMemcpyAsync(
@@ -1225,20 +1370,19 @@ void BuildSSTables(
     CHECK(cudaStreamSynchronize(stream[i]));
   }
 
-  //  cudaEventRecord(end, nullptr);
-  //  cudaEventSynchronize(end);
-  //  cudaEventElapsedTime(&elapsed_time, start, end);
-  //  gpu_stats.transmission_time += elapsed_time;
-
   auto start_time = std::chrono::high_resolution_clock::now();
 
   // 构建所有文件的数据块
   BuildDataBlocks(&all_files_buffer_d, key_values_d, input_files_d,
-                  index_keys_d, size_incomplete_data_block,
+                  index_keys_d, filter_block_d, size_incomplete_data_block,
                   num_data_block_front_file, num_data_block_last_file,
                   num_kv_last_data_block_last_file,
                   num_restarts_last_data_block_last_file,
                   restarts_last_data_block_last_file_d, num_outputs, stream);
+
+  // 构建所有文件的过滤块
+  BuildFilterBlocks(&all_files_buffer_d, filter_block_d, num_outputs,
+                    total_bits_front_file, total_bits_last_file, stream);
 
   // 构建所有文件的索引块
   BuildIndexBlocks(&all_files_buffer_d, index_keys_d, block_handles_d,
@@ -1257,47 +1401,15 @@ void BuildSSTables(
 
   gpu_stats.gpu_all_micros += duration.count();
 
+  auto* filter_block_h = new uint32_t[total_num_kv];
+  auto* key_values_h = new GPUKeyValue[total_num_kv];
+  cudaMemcpy(filter_block_h, filter_block_d, total_num_kv * sizeof(uint32_t),
+             cudaMemcpyDeviceToHost);
+  cudaMemcpy(key_values_h, key_values_d, total_num_kv * sizeof(GPUKeyValue),
+             cudaMemcpyDeviceToHost);
+
   // 写SSTable
   // 方法1
-  /*size_t num_threads;
-  if (num_outputs < num_threads_for_gpu) {
-    num_threads = num_outputs;
-  } else {
-    num_threads = num_threads_for_gpu;
-  }
-
-  // 申请一个线程池，多线程执行写每个文件的最后三个块
-  thread_pool_for_gpu.clear();
-  thread_pool_for_gpu.reserve(num_threads - 1);
-
-  // 使用分块策略将任务分配给线程
-  size_t chunk_size =
-      (num_outputs + num_threads_for_gpu - 1) / num_threads_for_gpu;
-
-  for (size_t t = 0; t < num_threads - 1; ++t) {
-    size_t begin = t * chunk_size;
-    if (begin >= num_outputs) {
-      break;
-    }
-    size_t end = std::min((t + 1) * chunk_size, num_outputs - 1);
-
-    thread_pool_for_gpu.emplace_back([&, begin, end]() {
-      for (size_t i = begin; i < end; ++i) {
-        char* current_file_buffer = all_files_buffer + estimate_file_size * i;
-        WriteSSTable(current_file_buffer, compaction_job, compact,
-                     file_writes[i], tbs[i], &metas[i], &tps[i], &infos[i],
-                     data_size, index_size);
-      }
-    });
-  }
-
-  WriteOtherBlocks(all_files_buffer + estimate_file_size * (num_outputs - 1),
-               compaction_job, compact, file_writes[num_outputs - 1],
-               tbs[num_outputs - 1], &metas[num_outputs - 1],
-               &tps[num_outputs - 1], &infos[num_outputs - 1],
-               data_size_last_file, index_size_last_file);*/
-
-  // 方法2
   /*thread_pool_for_gpu.clear();
   thread_pool_for_gpu.reserve(num_outputs - 1);
 
@@ -1317,44 +1429,11 @@ void BuildSSTables(
                    &infos[num_outputs - 1], data_size_last_file,
                    index_size_last_file);*/
 
-  // 方法3
-  /*size_t count = num_outputs % num_threads_for_gpu == 0
-                     ? num_outputs / num_threads_for_gpu
-                     : num_outputs / num_threads_for_gpu + 1;
-
-  if (num_outputs < num_threads_for_gpu) {
-    thread_pool_for_gpu.clear();
-    thread_pool_for_gpu.reserve(num_outputs - 1);
-  } else {
-    thread_pool_for_gpu.clear();
-    thread_pool_for_gpu.reserve(num_threads_for_gpu);
-  }
-
-  for (size_t t = 0; t < count; ++t) {
-    for (size_t i = t * num_threads_for_gpu; i < (t + 1) * num_threads_for_gpu;
-         ++i) {
-      if (i >= num_outputs - 1) {
-        break;
-      }
-      char* current_file_buffer = all_files_buffer + estimate_file_size * i;
-      thread_pool_for_gpu.emplace_back(&WriteSSTable, current_file_buffer,
-                                       compaction_job, compact, file_writes[i],
-                                       tbs[i], &metas[i], &tps[i], &infos[i],
-                                       data_size, index_size);
-    }
-  }
-
-  WriteOtherBlocks(all_files_buffer + estimate_file_size * (num_outputs - 1),
-               compaction_job, compact, file_writes[num_outputs - 1],
-               tbs[num_outputs - 1], &metas[num_outputs - 1],
-               &tps[num_outputs - 1], &infos[num_outputs - 1],
-               data_size_last_file, index_size_last_file);*/
-
-  // 方法4
+  // 方法2
   /*for (size_t i = 0; i < num_outputs - 1; ++i) {
     char* current_file_buffer = all_files_buffer_d + estimate_file_size * i;
     WriteOtherBlocks(current_file_buffer, tbs[i], &metas[i], &tps[i], &infos[i],
-                     data_size, index_size);
+                     data_size, filter_size, index_size);
 
     WriteSSTable(current_file_buffer, file_writes[i]->file_name(),
                  infos[i].file_size);
@@ -1365,12 +1444,12 @@ void BuildSSTables(
   WriteOtherBlocks(current_file_buffer, tbs[num_outputs - 1],
                    &metas[num_outputs - 1], &tps[num_outputs - 1],
                    &infos[num_outputs - 1], data_size_last_file,
-                   index_size_last_file);
+                   filter_size_last_file, index_size_last_file);
 
   WriteSSTable(current_file_buffer, file_writes[num_outputs - 1]->file_name(),
                infos[num_outputs - 1].file_size);*/
 
-  // 方法5
+  // 方法3
   std::vector<std::thread> thread_pool;
 
   // 计算每个线程应处理的任务数量
@@ -1386,13 +1465,14 @@ void BuildSSTables(
       size_t end_index = start_index + outputs_per_thread;
 
       thread_pool.emplace_back([&all_files_buffer_d, &file_writes, &tbs, &metas,
-                                   &tps, &infos, &data_size, &index_size,
-                                   start_index, end_index, &estimate_file_size] {
+                                &tps, &infos, &data_size, &filter_size,
+                                &index_size, start_index, end_index,
+                                &estimate_file_size] {
         for (size_t i = start_index; i < end_index; ++i) {
           char* current_file_buffer =
               all_files_buffer_d + estimate_file_size * i;
           WriteOtherBlocks(current_file_buffer, tbs[i], &metas[i], &tps[i],
-                           &infos[i], data_size, index_size);
+                           &infos[i], data_size, filter_size, index_size);
 
           WriteSSTable(current_file_buffer, file_writes[i]->file_name(),
                        infos[i].file_size);
@@ -1403,8 +1483,8 @@ void BuildSSTables(
 
   for (size_t i = 3 * outputs_per_thread; i < num_outputs - 1; ++i) {
     char* current_file_buffer = all_files_buffer_d + estimate_file_size * i;
-    WriteOtherBlocks(current_file_buffer, tbs[i], &metas[i], &tps[i],
-                     &infos[i], data_size, index_size);
+    WriteOtherBlocks(current_file_buffer, tbs[i], &metas[i], &tps[i], &infos[i],
+                     data_size, filter_size, index_size);
 
     WriteSSTable(current_file_buffer, file_writes[i]->file_name(),
                  infos[i].file_size);
@@ -1415,7 +1495,7 @@ void BuildSSTables(
   WriteOtherBlocks(current_file_buffer, tbs[num_outputs - 1],
                    &metas[num_outputs - 1], &tps[num_outputs - 1],
                    &infos[num_outputs - 1], data_size_last_file,
-                   index_size_last_file);
+                   filter_size_last_file, index_size_last_file);
 
   WriteSSTable(current_file_buffer, file_writes[num_outputs - 1]->file_name(),
                infos[num_outputs - 1].file_size);

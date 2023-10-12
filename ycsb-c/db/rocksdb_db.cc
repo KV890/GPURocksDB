@@ -49,7 +49,7 @@ void RocksDB::SetOptions(rocksdb::Options *options, int max_background_jobs) {
   table_options->block_cache = cache;
 
   // bloom filter
-  //  table_options->filter_policy.reset(rocksdb::NewBloomFilterPolicy(10));
+  table_options->filter_policy.reset(rocksdb::NewBloomFilterPolicy(10));
 
   db_stats_ = rocksdb::CreateDBStatistics();
   options->statistics = db_stats_;
@@ -74,6 +74,31 @@ int RocksDB::Read(const std::string &table, const std::string &key,
     std::cout << "value: " << value << std::endl;
     return 0;
   }
+}
+
+int RocksDB::ReadBatch(std::vector<rocksdb::Slice> keys,
+                       std::vector<std::string> &values) {
+  std::vector<rocksdb::Status> status =
+      db_->MultiGet(rocksdb::ReadOptions(), keys, &values);
+
+  int count = 0;
+  for (const auto &s : status) {
+    count++;
+
+    if (values[count].empty()) {
+      std::string value;
+      db_->Get(rocksdb::ReadOptions(), keys[count], &value);
+    }
+
+    if (s.IsNotFound()) {
+      not_found_++;
+    } else if (!s.ok()) {
+      std::cerr << "read error!" << std::endl;
+      return -1;
+    }
+  }
+
+  return DB::kOK;
 }
 
 int RocksDB::Scan(const std::string &table, const std::string &key, int len,
@@ -125,6 +150,10 @@ int RocksDB::InsertBatch(rocksdb::WriteBatch batch) {
 int RocksDB::Update(const std::string &table, const std::string &key,
                     std::vector<KVPair> &values) {
   return Insert(table, key, values);
+}
+
+int RocksDB::UpdateBatch(rocksdb::WriteBatch batch) {
+  return InsertBatch(batch);
 }
 
 int RocksDB::Delete(const std::string &table, const std::string &key) {

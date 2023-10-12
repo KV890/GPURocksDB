@@ -1196,7 +1196,7 @@ char* LegacyBloomBitsBuilder::ReserveSpace(size_t num_entries,
 inline void LegacyBloomBitsBuilder::AddHash(uint32_t h, char* data,
                                             uint32_t num_lines,
                                             uint32_t total_bits) {
-#ifdef NDEBUG
+#ifdef NDEBUG8
   static_cast<void>(total_bits);
 #endif
   assert(num_lines > 0 && total_bits > 0);
@@ -1389,7 +1389,8 @@ FilterBitsBuilder* BloomFilterPolicy::GetBuilderWithContext(
   } else if (context.table_options.format_version < 5) {
     return GetLegacyBloomBuilderWithContext(context);
   } else {
-    return GetFastLocalBloomBuilderWithContext(context);
+    return GetLegacyBloomBuilderWithContext(context);
+//    return GetFastLocalBloomBuilderWithContext(context);
   }
 }
 

@@ -56,7 +56,8 @@ inline __constant__ size_t size_complete_data_block_d;
 
 // GPU编码多SSTable专用
 // 前面的文件中一个文件的KV对总数量
-inline __constant__ size_t total_num_kv_front_file_d;
+inline __constant__ size_t num_kv_front_file_d;
+inline __constant__ size_t num_kv_last_file_d;
 // 前面的文件中一个文件的预估大小
 inline __constant__ size_t size_front_file_d;
 // 输出文件的数量
@@ -67,6 +68,12 @@ inline __constant__ size_t data_size_d;
 inline __constant__ size_t data_size_last_file_d;
 // 非最后一个文件索引块的大小
 inline __constant__ size_t index_size_d;
+// 非最后一个文件过滤块大小
+inline __constant__ size_t filter_size_d;
+// 最后一个文件过滤块大小
+inline __constant__ size_t filter_size_last_file_d;
+inline __constant__ uint32_t num_lines_d;
+inline __constant__ uint32_t num_lines_last_file_d;
 
 struct SSTableInfo {
   __host__ __device__ SSTableInfo() = default;

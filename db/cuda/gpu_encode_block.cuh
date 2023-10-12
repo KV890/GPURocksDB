@@ -195,6 +195,7 @@
 #include "table/block_based/block_based_table_builder.h"
 #include "table/block_based/block_based_table_factory.h"
 #include "table/meta_blocks.h"
+#include "util/gpu_bloom.cuh"
 
 #ifndef __global__
 #define __global__
@@ -357,6 +358,42 @@ __device__ inline char* GPUEncodeTo(char* dst, uint64_t offset, uint64_t size) {
   char* cur = GPUEncodeVarint64(dst, offset);
   cur = GPUEncodeVarint64(cur, size);
   return cur;
+}
+
+inline uint32_t MyGetTotalBitsForLocality(uint32_t total_bits) {
+  uint32_t num_lines =
+      (total_bits + CACHE_LINE_SIZE * 8 - 1) / (CACHE_LINE_SIZE * 8);
+
+  // Make num_lines an odd number to make sure more bits are involved
+  // when determining which block.
+  if (num_lines % 2 == 0) {
+    num_lines++;
+  }
+  return num_lines * (CACHE_LINE_SIZE * 8);
+}
+
+inline uint32_t MyCalculateSpace(size_t num_entries, uint32_t* total_bits,
+                                 uint32_t* num_lines) {
+  if (num_entries != 0) {
+    size_t total_bits_tmp = num_entries * 10;
+    // total bits, including temporary computations, cannot exceed 2^32
+    // for compatibility
+    total_bits_tmp = std::min(total_bits_tmp, size_t{0xffff0000});
+
+    *total_bits =
+        MyGetTotalBitsForLocality(static_cast<uint32_t>(total_bits_tmp));
+    *num_lines = *total_bits / (CACHE_LINE_SIZE * 8);
+    assert(*total_bits > 0 && *total_bits % 8 == 0);
+  } else {
+    // filter is empty, just leave space for metadata
+    *total_bits = 0;
+    *num_lines = 0;
+  }
+
+  // Reserve space for Filter
+  uint32_t sz = *total_bits / 8;
+  sz += 5;  // 4 bytes for num_lines, 1 byte for num_probes
+  return sz;
 }
 
 inline void WriteSSTable(char* buffer_d, const std::string& filename,
@@ -565,8 +602,8 @@ void GPUWriteBlock(char** buffer_d, const Slice& block_contents,
 void GPUBuildPropertiesBlock(
     char** buffer_d, FileMetaData* meta,
     const std::shared_ptr<TableBuilderOptions>& tboptions, size_t data_size,
-    size_t index_size, MetaIndexBuilder* metaIndexBuilder, size_t& new_offset,
-    TableProperties* props);
+    size_t filter_size, size_t index_size, MetaIndexBuilder* metaIndexBuilder,
+    size_t& new_offset, TableProperties* props);
 
 /**
  * CPU执行
@@ -661,8 +698,9 @@ char* BuildSSTable(const GPUKeyValue* keyValues, InputFile* inputFiles_d,
 __device__ void BeginBuildDataBlock(
     uint32_t file_idx, uint32_t block_idx, char* current_block_buffer,
     GPUKeyValue* key_values_d, InputFile* input_files_d, char* index_keys_d,
-    size_t num_kv_current_data_block, uint32_t num_current_restarts,
-    uint32_t* current_restarts, size_t size_current_data_block);
+    uint32_t* filter_block_d, size_t num_kv_current_data_block,
+    uint32_t num_current_restarts, uint32_t* current_restarts,
+    size_t size_current_data_block);
 
 /**
  * 编码前几个文件(不包含最后一个文件)的数据块
@@ -675,7 +713,8 @@ __device__ void BeginBuildDataBlock(
 __global__ void BuildDataBlocksFrontFileKernel(char* buffer_d,
                                                GPUKeyValue* key_values_d,
                                                InputFile* input_files_d,
-                                               char* index_keys_d);
+                                               char* index_keys_d,
+                                               uint32_t* filter_block_d);
 
 /**
  * 编码最后一个文件的前面的数据块(不包含最后一个数据块)
@@ -688,7 +727,8 @@ __global__ void BuildDataBlocksFrontFileKernel(char* buffer_d,
 __global__ void BuildDataBlocksLastFileKernel(char* buffer_d,
                                               GPUKeyValue* key_values_d,
                                               InputFile* input_files_d,
-                                              char* index_keys_d);
+                                              char* index_keys_d,
+                                              uint32_t* filter_block_d);
 
 /**
  * 编码最后一个文件的最后一个的数据块
@@ -705,8 +745,8 @@ __global__ void BuildDataBlocksLastFileKernel(char* buffer_d,
  */
 __global__ void BuildLastDataBlockLastFileKernel(
     char* buffer_d, GPUKeyValue* key_values_d, InputFile* input_files_d,
-    char* index_keys_d, size_t num_data_block_last_file,
-    size_t num_kv_last_data_block_last_file,
+    char* index_keys_d, uint32_t* filter_block_d,
+    size_t num_data_block_last_file, size_t num_kv_last_data_block_last_file,
     uint32_t num_restarts_last_data_block_last_file,
     uint32_t* restarts_last_data_block_last_file_d,
     size_t size_incomplete_data_block);
@@ -729,6 +769,7 @@ __global__ void BuildLastDataBlockLastFileKernel(
  */
 void BuildDataBlocks(char** buffer_d, GPUKeyValue* key_values_d,
                      InputFile* input_files_d, char* index_keys_d,
+                     uint32_t* filter_block_d,
                      size_t size_incomplete_data_block,
                      size_t num_data_block_front_file,
                      size_t num_data_block_last_file,
@@ -736,6 +777,29 @@ void BuildDataBlocks(char** buffer_d, GPUKeyValue* key_values_d,
                      uint32_t num_restarts_last_data_block_last_file,
                      uint32_t* restarts_last_data_block_last_file_d,
                      size_t num_outputs, cudaStream_t* stream);
+
+__device__ void BeginBuildFilterBlock(uint32_t file_idx, size_t current_num_kv,
+                                      char* current_buffer,
+                                      const uint32_t* filter_block_d,
+                                      uint32_t num_lines);
+
+__global__ void BuildFilterBlockKernel(char* buffer_d,
+                                       uint32_t* filter_block_d);
+
+__global__ void BuildFilterBlockMetadata(char* buffer_d,
+                                         uint32_t total_bits_front_file,
+                                         uint32_t total_bits_last_file);
+
+
+
+/**
+ * 构造 Bloom 过滤块
+ * 串行可以，就是一个key一个key进行构造是可以的，不会造成错报
+ * 并行不可以，不管是key之间并行还是数据块之间并行都不可以，会产生错报
+ */
+void BuildFilterBlocks(char** buffer_d, uint32_t* filter_block_d,
+                       size_t num_outputs, uint32_t total_bits_front_file,
+                       uint32_t total_bits_last_file, cudaStream_t* stream);
 
 /**
  * 构建索引块的主要逻辑
@@ -867,7 +931,8 @@ void BuildIndexBlocks(char** buffer_d, char* index_keys_d,
 void WriteOtherBlocks(char* buffer_d,
                       const std::shared_ptr<TableBuilderOptions>& tbs,
                       FileMetaData* meta, TableProperties* tp,
-                      SSTableInfo* info, size_t data_size, size_t index_size);
+                      SSTableInfo* info, size_t data_size, size_t filter_size,
+                      size_t index_size);
 
 /**
  * GPU并行编码多SSTable

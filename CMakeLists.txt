@@ -964,8 +964,7 @@ set(SOURCES
         utilities/wal_filter.cc
         utilities/write_batch_with_index/write_batch_with_index.cc
         utilities/write_batch_with_index/write_batch_with_index_internal.cc
-        db/gpu_compaction_stats.cc
-        db/my_write_batch.cc)
+        db/gpu_compaction_stats.cc)
 
 list(APPEND SOURCES
         utilities/transactions/lock/range/range_tree/lib/locktree/concurrent_tree.cc
@@ -1648,6 +1647,7 @@ add_library(rocksdb_cuda
         db/cuda/gpu_slice.cu
         db/cuda/gpu_encode_block.cu
         db/cuda/util/gpu_crc32c.cu
+        db/cuda/util/gpu_bloom.cu
 )
 
 # 指定头文件的搜索路径

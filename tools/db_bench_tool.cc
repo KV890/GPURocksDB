@@ -722,7 +722,7 @@ DEFINE_int32(random_access_max_buffer_size, 1024 * 1024,
 DEFINE_int32(writable_file_max_buffer_size, 1024 * 1024,
              "Maximum write buffer for Writable File");
 
-DEFINE_int32(bloom_bits, -1,
+DEFINE_int32(bloom_bits, 10,
              "Bloom filter bits per key. Negative means use default."
              "Zero disables.");
 

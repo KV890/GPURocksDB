@@ -57,6 +57,16 @@ class DB {
                    const std::vector<std::string> *fields,
                    std::vector<KVPair> &result) = 0;
 
+  /**
+   * Read Batch
+   *
+   * @param keys
+   * @param values
+   * @return
+   */
+  virtual int ReadBatch(std::vector<rocksdb::Slice> keys,
+                        std::vector<std::string> &values) = 0;
+
   ///
   /// Performs a range scan for a set of records in the database.
   /// Field/value pairs from the result are stored in a vector.
@@ -84,6 +94,9 @@ class DB {
   ///
   virtual int Update(const std::string &table, const std::string &key,
                      std::vector<KVPair> &values) = 0;
+
+  virtual int UpdateBatch(rocksdb::WriteBatch batch) = 0;
+
   ///
   /// Inserts a record into the database.
   /// Field/value pairs in the specified vector are written into the record.
