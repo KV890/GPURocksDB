@@ -78,16 +78,48 @@ int RocksDB::Read(const std::string &table, const std::string &key,
 
 int RocksDB::ReadBatch(std::vector<rocksdb::Slice> keys,
                        std::vector<std::string> &values) {
+  const size_t thread_num = 3;
+  std::vector<std::thread> thread_pool;
+  thread_pool.reserve(thread_num);
+
+  size_t num_per_thread = keys.size() / (thread_num + 1);
+
+  std::vector<std::vector<rocksdb::Slice>> keys_tmps;
+  keys_tmps.reserve(thread_num);
+
+  for (size_t i = 0; i < thread_num; ++i) {
+    // 创建每个线程需要处理的 key 的临时子集
+    keys_tmps.emplace_back(keys.begin() + i * num_per_thread,
+                           keys.begin() + (i + 1) * num_per_thread);
+    // 将任务添加到线程池
+    thread_pool.emplace_back([this, &keys_tmp = keys_tmps.back()] {
+      std::vector<std::string> values_tmp;
+      std::vector<rocksdb::Status> status =
+          db_->MultiGet(rocksdb::ReadOptions(), keys_tmp, &values_tmp);
+
+      for (const auto &s : status) {
+        if (s.IsNotFound()) {
+          not_found_++;
+        }
+      }
+    });
+  }
+
+  std::vector<rocksdb::Slice> keys_last(
+      keys.begin() + thread_num * num_per_thread, keys.end());
+  std::vector<std::string> values_tmp;
+
   std::vector<rocksdb::Status> status =
-      db_->MultiGet(rocksdb::ReadOptions(), keys, &values);
+      db_->MultiGet(rocksdb::ReadOptions(), keys_last, &values_tmp);
 
   for (const auto &s : status) {
     if (s.IsNotFound()) {
       not_found_++;
-    } else if (!s.ok()) {
-      std::cerr << "read error!" << std::endl;
-      return -1;
     }
+  }
+
+  for (auto &thread : thread_pool) {
+    thread.join();
   }
 
   return DB::kOK;
@@ -127,7 +159,7 @@ int RocksDB::Insert(const std::string &table, const std::string &key,
   return DB::kOK;
 }
 
-int RocksDB::InsertBatch(rocksdb::WriteBatch batch) {
+int RocksDB::InsertBatch(rocksdb::WriteBatch &batch) {
   rocksdb::Status s = db_->Write(rocksdb::WriteOptions(), &batch);
 
   if (!s.ok()) {
@@ -144,7 +176,7 @@ int RocksDB::Update(const std::string &table, const std::string &key,
   return Insert(table, key, values);
 }
 
-int RocksDB::UpdateBatch(rocksdb::WriteBatch batch) {
+int RocksDB::UpdateBatch(rocksdb::WriteBatch &batch) {
   return InsertBatch(batch);
 }
 

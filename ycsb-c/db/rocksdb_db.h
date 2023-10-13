@@ -29,12 +29,12 @@ class RocksDB : public DB {
   int Update(const std::string &table, const std::string &key,
              std::vector<KVPair> &values) override;
 
-  int UpdateBatch(rocksdb::WriteBatch batch) override;
+  int UpdateBatch(rocksdb::WriteBatch& batch) override;
 
   int Insert(const std::string &table, const std::string &key,
              std::vector<KVPair> &values) override;
 
-  int InsertBatch(rocksdb::WriteBatch batch) override;
+  int InsertBatch(rocksdb::WriteBatch& batch) override;
 
   int Delete(const std::string &table, const std::string &key) override;
 
@@ -48,7 +48,7 @@ class RocksDB : public DB {
   rocksdb::DB *db_;
   std::shared_ptr<rocksdb::Cache> cache_;
   std::shared_ptr<rocksdb::Statistics> db_stats_;
-  size_t not_found_;
+  std::atomic<size_t> not_found_;
 
   void SetOptions(rocksdb::Options *options, int max_background_jobs);
 };

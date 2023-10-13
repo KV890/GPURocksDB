@@ -95,7 +95,7 @@ class DB {
   virtual int Update(const std::string &table, const std::string &key,
                      std::vector<KVPair> &values) = 0;
 
-  virtual int UpdateBatch(rocksdb::WriteBatch batch) = 0;
+  virtual int UpdateBatch(rocksdb::WriteBatch& batch) = 0;
 
   ///
   /// Inserts a record into the database.
@@ -115,7 +115,7 @@ class DB {
    * @param batch
    * @return
    */
-  virtual int InsertBatch(rocksdb::WriteBatch batch) = 0;
+  virtual int InsertBatch(rocksdb::WriteBatch& batch) = 0;
 
   ///
   /// Deletes a record from the database.

@@ -42,7 +42,7 @@ int DelegateClient(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const size_t num_ops,
     if (is_loading) {
       oks += client.DoInsert(is_running);
     } else {
-      //      oks += client.DoTransaction();
+      oks += client.DoTransaction();
     }
 
     if (oks >= ops_stage) {
