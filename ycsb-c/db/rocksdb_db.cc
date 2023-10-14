@@ -36,7 +36,6 @@ RocksDB::RocksDB(const char *dbfilename, int max_background_jobs)
 
 void RocksDB::SetOptions(rocksdb::Options *options, int max_background_jobs) {
   options->create_if_missing = true;
-  options->create_missing_column_families = true;
   options->compression = rocksdb::CompressionType::kNoCompression;
   options->max_background_jobs = max_background_jobs;
 

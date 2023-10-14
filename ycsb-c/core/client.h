@@ -21,7 +21,7 @@ class Client {
   Client(DB& db, CoreWorkload& wl) : db_(db), workload_(wl) {}
 
   virtual bool DoInsert(bool is_running);
-  size_t DoInsert(rocksdb::WriteBatch batch, size_t batch_size);
+  virtual size_t DoInsert(rocksdb::WriteBatch& batch, size_t batch_size);
   virtual bool DoTransaction();
   virtual size_t DoTransaction(rocksdb::WriteBatch& batch_update,
                                rocksdb::WriteBatch& batch_insert,
@@ -35,8 +35,8 @@ class Client {
   virtual int TransactionRead();
   virtual void TransactionRead(std::vector<rocksdb::Slice>& keys,
                                std::vector<std::string>& values);
-  virtual size_t TransactionReadModifyWrite();
-  virtual size_t TransactionScan();
+  virtual int TransactionReadModifyWrite();
+  virtual int TransactionScan();
   virtual int TransactionUpdate();
   virtual int TransactionInsert();
   virtual void TransactionUpdate(rocksdb::WriteBatch& batch);
@@ -57,7 +57,7 @@ inline bool Client::DoInsert(bool is_running) {
   }
 }
 
-inline size_t Client::DoInsert(rocksdb::WriteBatch batch, size_t batch_size) {
+inline size_t Client::DoInsert(rocksdb::WriteBatch& batch, size_t batch_size) {
   for (size_t j = 0; j < batch_size; ++j) {
     std::string key = workload_.NextSequenceKey();
     workload_.NextTable();
@@ -173,7 +173,7 @@ inline void Client::TransactionRead(std::vector<rocksdb::Slice>& keys,
   values.clear();
 }
 
-inline size_t Client::TransactionReadModifyWrite() {
+inline int Client::TransactionReadModifyWrite() {
   const std::string& table = workload_.NextTable();
   const std::string& key = workload_.NextTransactionKey();
   std::vector<DB::KVPair> result;
@@ -195,7 +195,7 @@ inline size_t Client::TransactionReadModifyWrite() {
   return db_.Update(table, key, values);
 }
 
-inline size_t Client::TransactionScan() {
+inline int Client::TransactionScan() {
   const std::string& table = workload_.NextTable();
   const std::string& key = workload_.NextTransactionKey();
   int len = workload_.NextScanLength();

@@ -931,7 +931,7 @@ void BuildFilterBlocks(char** buffer_d, uint32_t* filter_block_d,
 
   BuildFilterBlockKernel<<<1, block, 0, stream[6]>>>(*buffer_d, filter_block_d);
 
-  BuildFilterBlockMetadata<<<1, block, 0, stream[7]>>>(
+  BuildFilterBlockMetadata<<<1, block, 0, stream[6]>>>(
       *buffer_d, total_bits_front_file, total_bits_last_file);
 }
 
