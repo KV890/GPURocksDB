@@ -211,10 +211,13 @@ size_t DelegateClientBatch(ycsbc::DB *db, ycsbc::CoreWorkload *wl,
     while (oks < num_ops) {
       rocksdb::WriteBatch batch_update;
       rocksdb::WriteBatch batch_insert;
+      rocksdb::WriteBatch batch_f;
       std::vector<rocksdb::Slice> keys;
       std::vector<std::string> values;
-      oks += client.DoTransaction(batch_update, batch_insert, keys, values,
-                                  batch_size);
+      std::vector<rocksdb::Slice> keys_f;
+      std::vector<std::string> values_f;
+      oks += client.DoTransaction(batch_update, batch_insert, batch_f, keys,
+                                  values, keys_f, values_f, batch_size);
 
 //      oks += client.DoTransaction();
 

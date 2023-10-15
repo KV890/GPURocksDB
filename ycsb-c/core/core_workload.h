@@ -141,7 +141,7 @@ class CoreWorkload {
   virtual std::string NextTransactionKey();  /// Used for transactions
   virtual Operation NextOperation() { return op_chooser_.Next(); }
   virtual std::string NextFieldName();
-  virtual size_t NextScanLength() { return scan_len_chooser_->Next(); }
+  virtual int NextScanLength() { return scan_len_chooser_->Next(); }
 
   [[nodiscard]] bool read_all_fields() const { return read_all_fields_; }
   [[nodiscard]] bool write_all_fields() const { return write_all_fields_; }
