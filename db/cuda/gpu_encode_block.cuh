@@ -413,6 +413,24 @@ inline void WriteSSTable(char* buffer_d, const std::string& filename,
   close(fd);
 }
 
+inline void WriteSSTable(char* buffer_d, const std::string& filename, int fd,
+                         CUfileHandle_t handle, CUfileDescr_t descr,
+                         size_t file_size, cudaStream_t stream) {
+  fd = open(filename.c_str(), O_CREAT | O_RDWR | O_DIRECT, 0664);
+
+  off_t file_offset = 0;
+  off_t buffer_offset = 0;
+  ssize_t bytes_written = 0;
+
+  descr.handle.fd = fd;
+  descr.type = CU_FILE_HANDLE_TYPE_OPAQUE_FD;
+
+  cuFileHandleRegister(&handle, &descr);
+
+  cuFileWriteAsync(handle, buffer_d, &file_size, &file_offset, &buffer_offset,
+                   &bytes_written, stream);
+}
+
 /**
  * 并行方式
  * 采用
@@ -789,8 +807,6 @@ __global__ void BuildFilterBlockKernel(char* buffer_d,
 __global__ void BuildFilterBlockMetadata(char* buffer_d,
                                          uint32_t total_bits_front_file,
                                          uint32_t total_bits_last_file);
-
-
 
 /**
  * 构造 Bloom 过滤块

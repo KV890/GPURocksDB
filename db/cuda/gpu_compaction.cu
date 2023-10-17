@@ -69,11 +69,11 @@ void InstallOutput(SSTableInfo* info, size_t info_size,
   GPUKeyValue max_element;
   GPUKeyValue min_element;
   for (size_t i = 0; i < info_size; ++i) {
-    cudaMemcpyAsync(&max_key,
-                    key_value_d_tmp + current_num_kv + info[i].total_num_kv - 1,
-                    sizeof(GPUKeyValue), cudaMemcpyDeviceToHost, stream[0]);
-    cudaMemcpyAsync(&min_key, key_value_d_tmp + current_num_kv,
-                    sizeof(GPUKeyValue), cudaMemcpyDeviceToHost, stream[0]);
+    cudaMemcpy(&max_key,
+               key_value_d_tmp + current_num_kv + info[i].total_num_kv - 1,
+               sizeof(GPUKeyValue), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&min_key, key_value_d_tmp + current_num_kv, sizeof(GPUKeyValue),
+               cudaMemcpyDeviceToHost);
 
     memcpy(largest_key + i * (keySize_ + 8), max_key.key, keySize_ + 8);
     memcpy(smallest_key + i * (keySize_ + 8), min_key.key, keySize_ + 8);
@@ -82,11 +82,11 @@ void InstallOutput(SSTableInfo* info, size_t info_size,
                  key_value_d_tmp + current_num_kv + info[i].total_num_kv,
                  MaxSequence());
 
-    cudaMemcpyAsync(&max_element,
-                    key_value_d_tmp + current_num_kv + info[i].total_num_kv - 1,
-                    sizeof(GPUKeyValue), cudaMemcpyDeviceToHost, stream[1]);
-    cudaMemcpyAsync(&min_element, key_value_d_tmp + current_num_kv,
-                    sizeof(GPUKeyValue), cudaMemcpyDeviceToHost, stream[1]);
+    cudaMemcpy(&max_element,
+               key_value_d_tmp + current_num_kv + info[i].total_num_kv - 1,
+               sizeof(GPUKeyValue), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&min_element, key_value_d_tmp + current_num_kv,
+               sizeof(GPUKeyValue), cudaMemcpyDeviceToHost);
 
     largest_seqno[i] = max_element.sequence;
     smallest_seqno[i] = min_element.sequence;

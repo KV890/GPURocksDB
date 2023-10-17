@@ -1393,10 +1393,9 @@ void BuildSSTables(
   auto end_time = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
       end_time - start_time);
-
   gpu_stats.gpu_all_micros += duration.count();
 
-  // 写SSTable
+  // 编码其他块，并写SSTable
   // 方法1
   /*thread_pool_for_gpu.clear();
   thread_pool_for_gpu.reserve(num_outputs - 1);
@@ -1427,8 +1426,8 @@ void BuildSSTables(
     WriteOtherBlocks(current_file_buffer, tbs[i], &metas[i], &tps[i], &infos[i],
                      data_size, filter_size, index_size);
 
-    WriteSSTable(current_file_buffer, file_writes[i]->file_name(),
-                 infos[i].file_size);
+    WriteSSTable(current_file_buffer, file_writes[i]->file_name(), fds[i],
+                 handles[i], descrs[i], infos[i].file_size, streams_write[i]);
   }
 
   char* current_file_buffer =
@@ -1439,7 +1438,18 @@ void BuildSSTables(
                    filter_size_last_file, index_size_last_file);
 
   WriteSSTable(current_file_buffer, file_writes[num_outputs - 1]->file_name(),
-               infos[num_outputs - 1].file_size);*/
+               fds[num_outputs - 1], handles[num_outputs - 1],
+               descrs[num_outputs - 1], infos[num_outputs - 1].file_size,
+               streams_write[num_outputs - 1]);
+
+  for (size_t i = 0; i < num_outputs; ++i) {
+    cudaStreamSynchronize(streams_write[i]);
+    cuFileStreamDeregister(streams_write[i]);
+    cudaStreamDestroy(streams_write[i]);
+
+    cuFileHandleDeregister(handles[i]);
+    close(fds[i]);
+  }*/
 
   // 方法3
   const size_t num_threads = 3;
