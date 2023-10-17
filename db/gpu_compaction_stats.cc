@@ -16,6 +16,7 @@ GPUCompactionStats::GPUCompactionStats()
       gpu_total_output_bytes(0),
       gpu_all_micros(0),
       gpu_compaction_count(0),
+      flush_time(0),
       gpu_total_sort_time(0),
       transmission_time(0) {}
 
@@ -32,6 +33,10 @@ void GPUCompactionStats::PrintStats() const {
   std::cout << "GPU 总compaction时间: " << gpu_all_micros << " us, "
             << static_cast<double>(static_cast<double>(gpu_all_micros) /
                                    1000000)
+            << " sec" << std::endl;
+
+  std::cout << "总Flush时间: " << flush_time << " us, "
+            << static_cast<double>(static_cast<double>(flush_time) / 1000000)
             << " sec" << std::endl;
 
   std::cout << "GPU sort总时间: " << gpu_total_sort_time << " us, "
@@ -77,8 +82,8 @@ void GPUCompactionStats::ResetStats() {
   gpu_all_micros = 0;
   gpu_compaction_count = 0;
 
+  flush_time = 0;
   gpu_total_sort_time = 0;
-
   transmission_time = 0;
 }
 

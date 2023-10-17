@@ -26,6 +26,7 @@
 #include "file/filename.h"
 #include "file/read_write_util.h"
 #include "file/writable_file_writer.h"
+#include "gpu_compaction_stats.h"
 #include "monitoring/iostats_context_imp.h"
 #include "monitoring/thread_status_util.h"
 #include "options/options_helper.h"
@@ -205,6 +206,8 @@ Status BuildTable(
         /*compaction=*/nullptr, compaction_filter.get(),
         /*shutting_down=*/nullptr, db_options.info_log, full_history_ts_low);
 
+    auto start_time = std::chrono::high_resolution_clock::now();
+
     c_iter.SeekToFirst();
     for (; c_iter.Valid(); c_iter.Next()) {
       const Slice& key = c_iter.key();
@@ -287,6 +290,12 @@ Status BuildTable(
     if (io_status->ok()) {
       *io_status = builder->io_status();
     }
+
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
+        end_time - start_time);
+
+    gpu_stats.flush_time += duration.count();
 
     if (s.ok() && !empty) {
       uint64_t file_size = builder->FileSize();

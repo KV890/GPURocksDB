@@ -29,8 +29,8 @@ class GPUCompactionStats {
   uint64_t gpu_all_micros;
   uint64_t gpu_compaction_count;
 
+  uint64_t flush_time;
   uint64_t gpu_total_sort_time;
-
   float transmission_time;
 };
 
