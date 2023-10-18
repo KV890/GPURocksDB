@@ -141,16 +141,14 @@ GPUKeyValue* DecodeAndSort(size_t num_inputs, InputFile* inputFiles_d,
                            size_t num_kv_data_block, size_t& sorted_size,
                            cudaStream_t* stream) {
   // 记录整个解析SSTable的时间
-  auto start_time = std::chrono::high_resolution_clock::now();
+//  auto start_time = std::chrono::high_resolution_clock::now();
 
   GPUKeyValue* result_d = GetAndSort(num_inputs, inputFiles_d,
                                      num_kv_data_block, sorted_size, stream);
 
-  auto end_time = std::chrono::high_resolution_clock::now();
-  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-      end_time - start_time);
-
-  gpu_stats.gpu_total_sort_time += duration.count();
+//  auto end_time = std::chrono::high_resolution_clock::now();
+//  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
+//      end_time - start_time);
 
   //  std::cout << "GPU decode and sort time: " << duration.count() << " us"
   //            << std::endl;
@@ -224,14 +222,14 @@ char* EncodeSSTable(const std::vector<GPUKeyValue>& keyValues,
                     size_t num_kv_data_block, FileMetaData& meta,
                     std::shared_ptr<TableBuilderOptions>& tboptions,
                     TableProperties& tp) {
-  auto start_time = std::chrono::high_resolution_clock::now();
+//  auto start_time = std::chrono::high_resolution_clock::now();
 
   char* result = BuildSSTable(keyValues.data(), inputFiles_d, info,
                               num_kv_data_block, meta, tboptions, tp);
 
-  auto end_time = std::chrono::high_resolution_clock::now();
-  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-      end_time - start_time);
+//  auto end_time = std::chrono::high_resolution_clock::now();
+//  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
+//      end_time - start_time);
   //  std::cout << "GPU Encode SSTable time: " << duration.count() << " us\n";
   //  printf("---------------------\n");
 
@@ -245,14 +243,14 @@ void EncodeSSTables(
     std::vector<std::shared_ptr<TableBuilderOptions>>& tbs,
     std::vector<TableProperties>& tps, size_t num_kv_data_block,
     cudaStream_t* stream) {
-  auto start_time = std::chrono::high_resolution_clock::now();
+//  auto start_time = std::chrono::high_resolution_clock::now();
 
   BuildSSTables(key_values_d, input_files_d, infos, metas, file_writes, tbs,
                 tps, num_kv_data_block, stream);
 
-  auto end_time = std::chrono::high_resolution_clock::now();
-  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-      end_time - start_time);
+//  auto end_time = std::chrono::high_resolution_clock::now();
+//  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
+//      end_time - start_time);
   //  std::cout << "GPU Encode SSTable time: " << duration.count() << " us\n";
   //  printf("---------------------\n");
 }
