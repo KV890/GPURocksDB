@@ -64,8 +64,7 @@ class DB {
    * @param values
    * @return
    */
-  virtual int ReadBatch(std::vector<rocksdb::Slice> keys,
-                        std::vector<std::string> &values) = 0;
+  virtual int ReadBatch(std::vector<rocksdb::Slice> keys) = 0;
 
   ///
   /// Performs a range scan for a set of records in the database.
@@ -82,6 +81,10 @@ class DB {
   virtual int Scan(const std::string &table, const std::string &key,
                    int record_count, const std::vector<std::string> *fields,
                    std::vector<std::vector<KVPair>> &result) = 0;
+
+  virtual int ScanBatch(std::vector<rocksdb::Slice> &keys,
+                        std::vector<int> &lens) = 0;
+
   ///
   /// Updates a record in the database.
   /// Field/value pairs in the specified vector are written to the record,
@@ -95,7 +98,7 @@ class DB {
   virtual int Update(const std::string &table, const std::string &key,
                      std::vector<KVPair> &values) = 0;
 
-  virtual int UpdateBatch(rocksdb::WriteBatch& batch) = 0;
+  virtual int UpdateBatch(rocksdb::WriteBatch &batch) = 0;
 
   ///
   /// Inserts a record into the database.
@@ -115,7 +118,7 @@ class DB {
    * @param batch
    * @return
    */
-  virtual int InsertBatch(rocksdb::WriteBatch& batch) = 0;
+  virtual int InsertBatch(rocksdb::WriteBatch &batch) = 0;
 
   ///
   /// Deletes a record from the database.

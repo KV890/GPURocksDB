@@ -26,20 +26,20 @@ class Client {
   virtual size_t DoTransaction(
       rocksdb::WriteBatch& batch_update, rocksdb::WriteBatch& batch_insert,
       rocksdb::WriteBatch& batch_f, std::vector<rocksdb::Slice>& keys,
-      std::vector<std::string>& values, std::vector<rocksdb::Slice>& keys_f,
-      std::vector<std::string>& values_f, size_t batch_size);
+      std::vector<rocksdb::Slice>& keys_scan, std::vector<int>& lens,
+      std::vector<rocksdb::Slice>& keys_f, size_t batch_size);
 
   virtual ~Client() = default;
 
  protected:
   virtual int TransactionRead();
-  virtual void TransactionRead(std::vector<rocksdb::Slice>& keys,
-                               std::vector<std::string>& values);
+  virtual void TransactionRead(std::vector<rocksdb::Slice>& keys);
   virtual int TransactionReadModifyWrite();
   virtual void TransactionReadModifyWrite(std::vector<rocksdb::Slice>& keys,
-                                          std::vector<std::string>& values,
                                           rocksdb::WriteBatch& batch);
   virtual int TransactionScan();
+  virtual void TransactionScan(std::vector<rocksdb::Slice>& keys,
+                               std::vector<int>& lens);
   virtual int TransactionUpdate();
   virtual int TransactionInsert();
   virtual void TransactionUpdate(rocksdb::WriteBatch& batch);
@@ -105,8 +105,8 @@ inline bool Client::DoTransaction() {
 inline size_t Client::DoTransaction(
     rocksdb::WriteBatch& batch_update, rocksdb::WriteBatch& batch_insert,
     rocksdb::WriteBatch& batch_f, std::vector<rocksdb::Slice>& keys,
-    std::vector<std::string>& values, std::vector<rocksdb::Slice>& keys_f,
-    std::vector<std::string>& values_f, size_t batch_size) {
+    std::vector<rocksdb::Slice>& keys_scan, std::vector<int>& lens,
+    std::vector<rocksdb::Slice>& keys_f, size_t batch_size) {
   for (size_t i = 0; i < batch_size; ++i) {
     Operation op = workload_.NextOperation();
     if (op == READ) {
@@ -127,7 +127,14 @@ inline size_t Client::DoTransaction(
 
       batch_insert.Put(workload_.NextSequenceKey(), pairs[0].second);
     } else if (op == SCAN) {
-      TransactionScan();
+      std::string key_str = workload_.NextTransactionKey();
+      int len = workload_.NextScanLength();
+
+      char* key_char = new char[rocksdb::keySize_];
+      memcpy(key_char, key_str.c_str(), rocksdb::keySize_);
+
+      keys_scan.emplace_back(key_char, rocksdb::keySize_);
+      lens.emplace_back(len);
     } else if (op == READMODIFYWRITE) {
       std::string key_str = workload_.NextTransactionKey();
       char* key_char = new char[rocksdb::keySize_];
@@ -145,7 +152,7 @@ inline size_t Client::DoTransaction(
   }
 
   if (!keys.empty()) {
-    TransactionRead(keys, values);
+    TransactionRead(keys);
   }
 
   if (batch_update.Count() > 0) {
@@ -156,8 +163,12 @@ inline size_t Client::DoTransaction(
     TransactionInsert(batch_insert);
   }
 
+  if (!keys_scan.empty()) {
+    TransactionScan(keys_scan, lens);
+  }
+
   if (!keys_f.empty()) {
-    TransactionReadModifyWrite(keys_f, values_f, batch_f);
+    TransactionReadModifyWrite(keys_f, batch_f);
   }
 
   return batch_size;
@@ -177,16 +188,14 @@ inline int Client::TransactionRead() {
   }
 }
 
-inline void Client::TransactionRead(std::vector<rocksdb::Slice>& keys,
-                                    std::vector<std::string>& values) {
-  db_.ReadBatch(keys, values);
+inline void Client::TransactionRead(std::vector<rocksdb::Slice>& keys) {
+  db_.ReadBatch(keys);
 
   for (auto& key : keys) {
     delete[] key.data();
   }
 
   keys.clear();
-  values.clear();
 }
 
 inline int Client::TransactionReadModifyWrite() {
@@ -212,9 +221,8 @@ inline int Client::TransactionReadModifyWrite() {
 }
 
 inline void Client::TransactionReadModifyWrite(
-    std::vector<rocksdb::Slice>& keys, std::vector<std::string>& values,
-    rocksdb::WriteBatch& batch) {
-  db_.ReadBatch(keys, values);
+    std::vector<rocksdb::Slice>& keys, rocksdb::WriteBatch& batch) {
+  db_.ReadBatch(keys);
   db_.UpdateBatch(batch);
 
   for (auto& key : keys) {
@@ -222,7 +230,6 @@ inline void Client::TransactionReadModifyWrite(
   }
 
   keys.clear();
-  values.clear();
   batch.Clear();
 }
 
@@ -238,6 +245,17 @@ inline int Client::TransactionScan() {
   } else {
     return db_.Scan(table, key, len, nullptr, result);
   }
+}
+
+inline void Client::TransactionScan(std::vector<rocksdb::Slice>& keys,
+                                    std::vector<int>& lens) {
+  db_.ScanBatch(keys, lens);
+
+  for (auto& key : keys) {
+    delete[] key.data();
+  }
+
+  keys.clear();
 }
 
 inline int Client::TransactionUpdate() {

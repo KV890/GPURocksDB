@@ -75,8 +75,7 @@ int RocksDB::Read(const std::string &table, const std::string &key,
   }
 }
 
-int RocksDB::ReadBatch(std::vector<rocksdb::Slice> keys,
-                       std::vector<std::string> &values) {
+int RocksDB::ReadBatch(std::vector<rocksdb::Slice> keys) {
   const size_t thread_num = 3;
   std::vector<std::thread> thread_pool;
   thread_pool.reserve(thread_num);
@@ -140,6 +139,67 @@ int RocksDB::Scan(const std::string &table, const std::string &key, int len,
   }
   delete it;
   return DB::kOK;
+}
+
+int RocksDB::ScanBatch(std::vector<rocksdb::Slice> &keys,
+                       std::vector<int> &lens) {
+  const size_t thread_num = 3;
+  std::vector<std::thread> thread_pool;
+  thread_pool.reserve(thread_num);
+
+  size_t num_per_thread = keys.size() / (thread_num + 1);
+
+  std::vector<std::vector<rocksdb::Slice>> keys_tmps;
+  std::vector<std::vector<int>> lens_tmps;
+  keys_tmps.reserve(thread_num);
+  lens_tmps.reserve(thread_num);
+
+  for (size_t i = 0; i < thread_num; ++i) {
+    // 创建每个线程需要处理的 key 的临时子集
+    keys_tmps.emplace_back(keys.begin() + i * num_per_thread,
+                           keys.begin() + (i + 1) * num_per_thread);
+    lens_tmps.emplace_back(lens.begin() + i * num_per_thread,
+                           lens.begin() + (i + 1) * num_per_thread);
+
+    // 将任务添加到线程池
+    thread_pool.emplace_back(
+        [this, &keys_tmp = keys_tmps.back(), &lens_tmp = lens_tmps.back()] {
+          for (size_t j = 0; j < keys_tmp.size(); ++j) {
+            auto it = db_->NewIterator(rocksdb::ReadOptions());
+            it->Seek(keys_tmp[j]);
+
+            for (int k = 0; k < lens_tmp[j] && it->Valid(); k++) {
+              it->Next();
+            }
+
+            delete it;
+          }
+        });
+  }
+
+  std::vector<rocksdb::Slice> keys_last(
+      keys.begin() + thread_num * num_per_thread, keys.end());
+  std::vector<int> lens_last(lens.begin() + thread_num * num_per_thread,
+                             lens.end());
+
+  for (size_t j = 0; j < keys_last.size(); ++j) {
+    auto it = db_->NewIterator(rocksdb::ReadOptions());
+    it->Seek(keys_last[j]);
+
+    std::string val;
+    std::string k;
+    for (int i = 0; i < lens_last[j] && it->Valid(); i++) {
+      it->Next();
+    }
+
+    delete it;
+  }
+
+  for (auto &thread : thread_pool) {
+    thread.join();
+  }
+
+  return 0;
 }
 
 int RocksDB::Insert(const std::string &table, const std::string &key,
