@@ -964,7 +964,8 @@ set(SOURCES
         utilities/wal_filter.cc
         utilities/write_batch_with_index/write_batch_with_index.cc
         utilities/write_batch_with_index/write_batch_with_index_internal.cc
-        db/gpu_compaction_stats.cc)
+        db/gpu_compaction_stats.cc
+        db/my_db.cc)
 
 list(APPEND SOURCES
         utilities/transactions/lock/range/range_tree/lib/locktree/concurrent_tree.cc
