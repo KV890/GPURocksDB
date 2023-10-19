@@ -59,7 +59,7 @@ void MyDB::MyModify(const std::string &key, const std::string &value) {
   keys_modify_.emplace_back(key_char, keySize_);
 
   batch_modify_.Put(key, value);
-  if (key.size() == batch_size_) {
+  if (keys_modify_.size() == batch_size_) {
     TransactionReadModifyWrite(keys_modify_, batch_modify_);
   }
 }

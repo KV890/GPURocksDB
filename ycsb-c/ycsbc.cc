@@ -40,6 +40,10 @@ int DelegateClient(ycsbc::DB *db, ycsbc::CoreWorkload *wl, size_t num_ops,
     if (is_loading) {
       oks += client.DoInsert();
     } else {
+      if (oks == 33800000) {
+        printf("\n");
+      }
+
       oks += client.DoTransaction();
     }
 
