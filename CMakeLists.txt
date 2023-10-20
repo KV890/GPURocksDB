@@ -965,6 +965,7 @@ set(SOURCES
         utilities/write_batch_with_index/write_batch_with_index.cc
         utilities/write_batch_with_index/write_batch_with_index_internal.cc
         db/gpu_compaction_stats.cc
+        db/my_db.cc
         db/my_db.cc)
 
 list(APPEND SOURCES
