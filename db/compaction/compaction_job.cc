@@ -2431,10 +2431,10 @@ Status CompactionJob::GPUCompaction(const Compaction* compact) {
     last_size = inputs->size();
   }
 
-  // 解码和排序
   cudaStream_t stream[8];
   CreateStream(stream, 8);
 
+  // 解码和排序
   size_t sorted_size;
 
   GPUKeyValue* result_d = DecodeAndSort(num_inputs, input_files_d,

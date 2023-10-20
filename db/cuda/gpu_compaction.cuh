@@ -58,10 +58,6 @@ __global__ inline void SetInputFile(InputFile* inputFile_d, size_t level,
   inputFile_d->num_entries = num_entries;
 }
 
-__global__ void PrepareOutputKernel(SSTableInfo* info_d, size_t info_size,
-                                    GPUKeyValue* result_d, char* largest_key_d,
-                                    char* smallest_key_d);
-
 void InstallOutput(SSTableInfo* info, size_t info_size,
                    GPUKeyValue* key_value_d_tmp, char* largest_key,
                    char* smallest_key, uint64_t* largest_seqno,
@@ -71,6 +67,7 @@ void AddInputFile(size_t level, const std::string& filename, FileMetaData* meta,
                   InputFile* input_file_d);
 
 void CreateStream(cudaStream_t* stream, size_t stream_size);
+
 void DestroyStream(cudaStream_t* stream, size_t stream_size);
 
 /**
@@ -139,15 +136,6 @@ void EncodeSSTables(
     std::vector<std::shared_ptr<TableBuilderOptions>>& tbs,
     std::vector<TableProperties>& tps, size_t num_kv_data_block,
     cudaStream_t* stream);
-
-/**
- * 释放资源
- *
- * @param blocks_buffer_d
- */
-void ReleaseDevPtr(char** blocks_buffer_d);
-
-void ReleaseSource(GPUKeyValue** key_value_h);
 
 /**
  *
