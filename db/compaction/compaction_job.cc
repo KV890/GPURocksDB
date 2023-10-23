@@ -2414,7 +2414,6 @@ Status CompactionJob::GPUCompaction(const Compaction* compact) {
   size_t num_kv_data_block = ComputeNumKVDataBlock();
 
   // 初始化需要传入设备的输入文件指针
-  // 该指针会在解析SSTable中被赋值，在编码SSTable时使用，编码结束后释放该指针资源
   InputFile* input_files_d = nullptr;
 
   MallocInputFiles(&input_files_d, num_inputs);
