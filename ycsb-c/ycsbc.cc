@@ -94,6 +94,8 @@ int Run(utils::Properties props, const std::string &filename) {
 
   std::this_thread::sleep_for(std::chrono::seconds(1));
 
+  db->PrintMyStats();
+
   rocksdb::gpu_stats.PrintStats();
   rocksdb::gpu_stats.ResetStats();
 
