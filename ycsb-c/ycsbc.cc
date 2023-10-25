@@ -22,7 +22,7 @@
 
 using namespace std;
 
-void UsageMessage(const char *command);
+void UsageMessage();
 bool StrStartWith(const char *str, const char *pre);
 std::string ParseCommandLine(int argc, const char *argv[],
                              utils::Properties &props);
@@ -161,7 +161,7 @@ std::string ParseCommandLine(int argc, const char *argv[],
     if (strcmp(argv[argindex], "-db") == 0) {
       argindex++;
       if (argindex >= argc) {
-        UsageMessage(argv[0]);
+        UsageMessage();
         exit(0);
       }
       props.SetProperty("dbname", argv[argindex]);
@@ -169,7 +169,7 @@ std::string ParseCommandLine(int argc, const char *argv[],
     } else if (strcmp(argv[argindex], "-host") == 0) {
       argindex++;
       if (argindex >= argc) {
-        UsageMessage(argv[0]);
+        UsageMessage();
         exit(0);
       }
       props.SetProperty("host", argv[argindex]);
@@ -177,7 +177,7 @@ std::string ParseCommandLine(int argc, const char *argv[],
     } else if (strcmp(argv[argindex], "-port") == 0) {
       argindex++;
       if (argindex >= argc) {
-        UsageMessage(argv[0]);
+        UsageMessage();
         exit(0);
       }
       props.SetProperty("port", argv[argindex]);
@@ -185,7 +185,7 @@ std::string ParseCommandLine(int argc, const char *argv[],
     } else if (strcmp(argv[argindex], "-slaves") == 0) {
       argindex++;
       if (argindex >= argc) {
-        UsageMessage(argv[0]);
+        UsageMessage();
         exit(0);
       }
       props.SetProperty("slaves", argv[argindex]);
@@ -193,7 +193,7 @@ std::string ParseCommandLine(int argc, const char *argv[],
     } else if (strcmp(argv[argindex], "-filename") == 0) {
       argindex++;
       if (argindex >= argc) {
-        UsageMessage(argv[0]);
+        UsageMessage();
         exit(0);
       }
 
@@ -202,7 +202,7 @@ std::string ParseCommandLine(int argc, const char *argv[],
     } else if (strcmp(argv[argindex], "-configpath") == 0) {
       argindex++;
       if (argindex >= argc) {
-        UsageMessage(argv[0]);
+        UsageMessage();
         exit(0);
       }
       props.SetProperty("configpath", argv[argindex]);
@@ -210,7 +210,7 @@ std::string ParseCommandLine(int argc, const char *argv[],
     } else if (strcmp(argv[argindex], "-P") == 0) {
       argindex++;
       if (argindex >= argc) {
-        UsageMessage(argv[0]);
+        UsageMessage();
         exit(0);
       }
       filename.assign(argv[argindex]);
@@ -230,31 +230,30 @@ std::string ParseCommandLine(int argc, const char *argv[],
   }
 
   std::error_code ec;
-  for (auto &entry : filesystem::directory_iterator(
-           props.GetProperty("dbfilename"), ec)) {
+  for (auto &entry :
+       filesystem::directory_iterator(props.GetProperty("dbfilename"), ec)) {
     filesystem::remove_all(entry, ec);
   }
 
   if (argindex == 1 || argindex != argc) {
-    UsageMessage(argv[0]);
+    UsageMessage();
     exit(0);
   }
 
   return filename;
 }
 
-void UsageMessage(const char *command) {
-  cout << "Usage: " << command << " [options]" << endl;
-  cout << "Options:" << endl;
-  cout << "  -threads n: execute using n threads (default: 1)" << endl;
-  cout << "  -db dbname: specify the name of the DB to use (default: basic)"
-       << endl;
-  cout << "  -P propertyfile: load properties from the given file. Multiple "
-          "files can"
-       << endl;
-  cout << "                   be specified, and will be processed in the order "
-          "specified"
-       << endl;
+void UsageMessage() {
+  std::cout << "example: \n"
+               "-filename\n"
+               "/media/d306/8bb53358-409c-470b-8697-1ea61b3e8f2a\n"
+               "-db\n"
+               "rocksdb\n"
+               "-configpath\n"
+               "0\n"
+               "-P\n"
+               "/home/d306/My/GPURocksDB-V3/workloads/100/workloadc.spec"
+            << std::endl;
 }
 
 inline bool StrStartWith(const char *str, const char *pre) {
