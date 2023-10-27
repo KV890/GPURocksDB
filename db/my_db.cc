@@ -221,8 +221,6 @@ void MyDB::ScanBatch(std::vector<Slice> &keys, std::vector<int> &lens) {
     auto it = db_->NewIterator(ReadOptions());
     it->Seek(keys_last[j]);
 
-    std::string val;
-    std::string k;
     for (int i = 0; i < lens_last[j] && it->Valid(); i++) {
       it->Next();
     }

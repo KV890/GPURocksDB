@@ -50,24 +50,10 @@ void RocksDB::SetOptions(rocksdb::Options *options) {
 int RocksDB::Read(const std::string &table, const std::string &key,
                   const std::vector<std::string> *fields,
                   std::vector<KVPair> &result) {
-  my_db_.MyGet(key);
+//  my_db_.MyGet(key);
 
-  /*std::string value;
-
-  rocksdb::Status s = db_->Get(rocksdb::ReadOptions(), key, &value);
-  if (s.ok()) {
-    return DB::kOK;
-  }
-  if (s.IsNotFound()) {
-    not_found_++;
-    db_->Get(rocksdb::ReadOptions(), key, &value);
-    return DB::kOK;
-  } else {
-    std::cerr << "read error!" << std::endl;
-    std::cout << "key: " << key << std::endl;
-    std::cout << "value: " << value << std::endl;
-    return 0;
-  }*/
+  std::string value;
+  db_->Get(rocksdb::ReadOptions(), key, &value);
 
   return 0;
 }
@@ -75,20 +61,16 @@ int RocksDB::Read(const std::string &table, const std::string &key,
 int RocksDB::Scan(const std::string &table, const std::string &key, int len,
                   const std::vector<std::string> *fields,
                   std::vector<std::vector<KVPair>> &result) {
-  my_db_.MyScan(key, len);
+//  my_db_.MyScan(key, len);
 
-  /*auto it = db_->NewIterator(rocksdb::ReadOptions());
+  auto it = db_->NewIterator(rocksdb::ReadOptions());
   it->Seek(key);
-  std::string val;
-  std::string k;
-  for (int i = 0; i < len && it->Valid(); i++) {
-    k = it->key().ToString();
-    val = it->value().ToString();
-    KVPair pair(k, val);
 
+  for (int i = 0; i < len && it->Valid(); i++) {
     it->Next();
   }
-  delete it;*/
+
+  delete it;
 
   return DB::kOK;
 }
@@ -97,24 +79,12 @@ int RocksDB::Insert(const std::string &table, const std::string &key,
                     std::vector<KVPair> &values) {
   my_db_.MyInsert(key, values[0].second);
 
-  /*rocksdb::Status s;
-  for (KVPair &p : values) {
-    s = db_->Put(rocksdb::WriteOptions(), key, p.second);
-    if (!s.ok()) {
-      fprintf(stderr, "insert error!\n");
-      std::cout << s.ToString() << std::endl;
-      exit(0);
-    }
-  }*/
-
   return DB::kOK;
 }
 
 int RocksDB::Update(const std::string &table, const std::string &key,
                     std::vector<KVPair> &values) {
   my_db_.MyUpdate(key, values[0].second);
-
-  //  return Insert(table, key, values);
 
   return 0;
 }
