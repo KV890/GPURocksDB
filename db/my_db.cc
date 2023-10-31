@@ -241,7 +241,7 @@ void MyDB::InsertBatch(WriteBatch &batch) {
   if (!s.ok()) {
     std::cerr << "insert error\n" << std::endl;
     std::cout << s.ToString() << std::endl;
-    exit(0);
+    exit(1);
   }
 }
 
