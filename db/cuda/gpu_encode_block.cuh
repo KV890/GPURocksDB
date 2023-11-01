@@ -398,6 +398,8 @@ inline uint32_t MyCalculateSpace(size_t num_entries, uint32_t* total_bits,
 
 inline void WriteSSTable(char* buffer_d, const std::string& filename,
                          size_t file_size) {
+  auto start_time = std::chrono::high_resolution_clock::now();
+
   int fd = open(filename.c_str(), O_CREAT | O_RDWR | O_DIRECT, 0664);
 
   CUfileDescr_t descr;
@@ -411,6 +413,11 @@ inline void WriteSSTable(char* buffer_d, const std::string& filename,
 
   cuFileHandleDeregister(handle);
   close(fd);
+
+  auto end_time = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
+      end_time - start_time);
+  gpu_stats.compaction_io_time += duration.count();
 }
 
 /**

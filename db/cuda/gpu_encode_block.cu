@@ -1304,6 +1304,8 @@ void BuildSSTables(
   uint32_t* restarts_for_index_front_file_d;
   uint32_t* restarts_for_index_last_file_d;
 
+  auto start_time = std::chrono::high_resolution_clock::now();
+
   cudaMallocAsync(&all_files_buffer_d, total_estimate_file_size, stream[3]);
   cudaMallocAsync(&index_keys_d, total_num_all_data_blocks * keySize_,
                   stream[4]);
@@ -1365,7 +1367,13 @@ void BuildSSTables(
     CHECK(cudaStreamSynchronize(stream[i]));
   }
 
-  auto start_time = std::chrono::high_resolution_clock::now();
+  auto end_time = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
+      end_time - start_time);
+
+  gpu_stats.transmission_and_malloc_time += duration.count();
+
+  start_time = std::chrono::high_resolution_clock::now();
 
   // 构建所有文件的数据块
   BuildDataBlocks(&all_files_buffer_d, key_values_d, input_files_d,
@@ -1390,10 +1398,12 @@ void BuildSSTables(
     CHECK(cudaStreamSynchronize(stream[i]));
   }
 
-  auto end_time = std::chrono::high_resolution_clock::now();
-  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-      end_time - start_time);
+  end_time = std::chrono::high_resolution_clock::now();
+  duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time -
+                                                                   start_time);
   gpu_stats.gpu_all_micros += duration.count();
+
+  uint64_t last_io_time = gpu_stats.compaction_io_time;
 
   // 编码其他块，并写SSTable
   // 方法1
@@ -1518,6 +1528,12 @@ void BuildSSTables(
   }
 
   cudaFree(all_files_buffer_d);
+
+  uint64_t curr_io_time = gpu_stats.compaction_io_time - last_io_time;
+
+  gpu_stats.total_io_time += curr_io_time;
+  gpu_stats.max_io_time = std::max(curr_io_time, gpu_stats.max_io_time);
+  gpu_stats.min_io_time = std::min(curr_io_time, gpu_stats.min_io_time);
 }
 
 }  // namespace ROCKSDB_NAMESPACE

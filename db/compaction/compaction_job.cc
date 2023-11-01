@@ -2056,7 +2056,7 @@ void CompactionJob::UpdateCompactionJobStats(
   compaction_job_stats_->num_output_files = stats.num_output_files;
   compaction_job_stats_->num_output_files_blob = stats.num_output_files_blob;
 
-  gpu_stats.cpu_all_micros += compaction_job_stats_->elapsed_micros;
+  gpu_stats.compaction_time += compaction_job_stats_->elapsed_micros;
 
   if (stats.num_output_files > 0) {
     CopyPrefix(compact_->SmallestUserKey(),
@@ -2418,6 +2418,8 @@ Status CompactionJob::GPUCompaction(const Compaction* compact) {
 
   MallocInputFiles(&input_files_d, num_inputs);
 
+  auto start_time = std::chrono::high_resolution_clock::now();
+
   size_t last_size = 0;
   for (size_t i = 0; i < num_input_level; ++i) {
     auto* inputs = compact->inputs(i);
@@ -2429,6 +2431,12 @@ Status CompactionJob::GPUCompaction(const Compaction* compact) {
     }
     last_size = inputs->size();
   }
+
+  auto end_time = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
+      end_time - start_time);
+
+  gpu_stats.compaction_io_time += duration.count();
 
   cudaStream_t stream[8];
   CreateStream(stream, 8);
@@ -2485,17 +2493,30 @@ Status CompactionJob::GPUCompaction(const Compaction* compact) {
 
   compaction_stats_.SetMicros(db_options_.clock->NowMicros() - start_micros);
 
-//  printf("Compaction time: %lu us\n", compaction_stats_.stats.micros);
+  //  printf("Compaction time: %lu us\n", compaction_stats_.stats.micros);
 
   compaction_stats_.AddCpuMicros(compaction_stats_.stats.micros);
 
   gpu_stats.gpu_total_input_bytes += gpu_input_bytes;
   gpu_stats.gpu_compaction_count++;
 
+  size_t current_total_size = 0;
   for (const auto& info : infos) {
-    gpu_stats.gpu_total_output_bytes += info.file_size;
+    current_total_size += info.file_size;
     compaction_stats_.stats.bytes_written += info.file_size;
   }
+
+  gpu_stats.gpu_total_output_bytes += current_total_size;
+
+  gpu_stats.total_num_file += info_size;
+  gpu_stats.max_num_file = std::max(info_size, gpu_stats.max_num_file);
+  gpu_stats.min_num_file = std::min(info_size, gpu_stats.min_num_file);
+
+  gpu_stats.total_file_size += current_total_size;
+  gpu_stats.max_file_size =
+      std::max(current_total_size, gpu_stats.max_file_size);
+  gpu_stats.min_file_size =
+      std::min(current_total_size, gpu_stats.min_file_size);
 
   RecordTimeToHistogram(stats_, COMPACTION_TIME,
                         compaction_stats_.stats.micros);

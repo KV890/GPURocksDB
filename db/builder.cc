@@ -291,12 +291,6 @@ Status BuildTable(
       *io_status = builder->io_status();
     }
 
-    auto end_time = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-        end_time - start_time);
-
-    gpu_stats.flush_time += duration.count();
-
     if (s.ok() && !empty) {
       uint64_t file_size = builder->FileSize();
       meta->fd.file_size = file_size;
@@ -369,6 +363,12 @@ Status BuildTable(
       }
       blob_file_builder.reset();
     }
+
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
+        end_time - start_time);
+
+    gpu_stats.flush_time += duration.count();
 
     // TODO Also check the IO status when create the Iterator.
 

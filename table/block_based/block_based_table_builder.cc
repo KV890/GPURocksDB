@@ -27,6 +27,7 @@
 #include "cache/cache_key.h"
 #include "cache/cache_reservation_manager.h"
 #include "db/dbformat.h"
+#include "db/gpu_compaction_stats.h"
 #include "index_builder.h"
 #include "logging/logging.h"
 #include "memory/memory_allocator.h"
@@ -1249,6 +1250,8 @@ void BlockBasedTableBuilder::WriteMaybeCompressedBlock(
     assert(type == kNoCompression);
   }
 
+  auto start_time = std::chrono::high_resolution_clock::now();
+
   {
     IOStatus io_s = r->file->Append(block_contents);
     if (!io_s.ok()) {
@@ -1256,6 +1259,12 @@ void BlockBasedTableBuilder::WriteMaybeCompressedBlock(
       return;
     }
   }
+
+  auto end_time = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
+      end_time - start_time);
+
+  gpu_stats.flush_io_time += duration.count();
 
   std::array<char, kBlockTrailerSize> trailer;
   trailer[0] = type;
@@ -1275,6 +1284,8 @@ void BlockBasedTableBuilder::WriteMaybeCompressedBlock(
   TEST_SYNC_POINT_CALLBACK(
       "BlockBasedTableBuilder::WriteMaybeCompressedBlock:TamperWithChecksum",
       trailer.data());
+  start_time = std::chrono::high_resolution_clock::now();
+
   {
     IOStatus io_s = r->file->Append(Slice(trailer.data(), trailer.size()));
     if (!io_s.ok()) {
@@ -1282,6 +1293,11 @@ void BlockBasedTableBuilder::WriteMaybeCompressedBlock(
       return;
     }
   }
+
+  end_time = std::chrono::high_resolution_clock::now();
+  duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time -
+                                                                   start_time);
+  gpu_stats.flush_io_time += duration.count();
 
   {
     bool warm_cache;
@@ -1419,7 +1435,6 @@ IOStatus BlockBasedTableBuilder::io_status() const {
 Status BlockBasedTableBuilder::InsertBlockInCacheHelper(
     const Slice& block_contents, const BlockHandle* handle,
     BlockType block_type) {
-
   Cache* block_cache = rep_->table_options.block_cache.get();
   Status s;
   auto helper =
