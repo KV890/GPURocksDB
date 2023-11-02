@@ -169,7 +169,7 @@ __global__ void DecodeDataBlocksKernel(InputFile* inputFiles,
 GPUKeyValue* GetAndSort(size_t num_file, InputFile* inputFiles_d,
                         size_t num_kv_data_block, size_t& sorted_size,
                         cudaStream_t* stream) {
-  auto start_time = std::chrono::high_resolution_clock::now();
+  //  auto start_time = std::chrono::high_resolution_clock::now();
 
   cudaMemcpyToSymbolAsync(num_files_d, &num_file, sizeof(size_t), 0,
                           cudaMemcpyHostToDevice, stream[0]);
@@ -227,17 +227,16 @@ GPUKeyValue* GetAndSort(size_t num_file, InputFile* inputFiles_d,
     CHECK(cudaStreamSynchronize(stream[i]));
   }
 
-  auto end_time = std::chrono::high_resolution_clock::now();
-  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-      end_time - start_time);
-
-  gpu_stats.transmission_and_malloc_time += duration.count();
+  //  auto end_time = std::chrono::high_resolution_clock::now();
+  //  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
+  //      end_time - start_time);
+  //  gpu_stats.transmission_and_malloc_time += duration.count();
 
   // 准备执行核函数
   dim3 block(num_file);
   dim3 grid(max_num_data_block);
 
-  start_time = std::chrono::high_resolution_clock::now();
+  auto start_time = std::chrono::high_resolution_clock::now();
 
   DecodeFootersKernel<<<1, block, 0, stream[0]>>>(inputFiles_d, footers_d);
 
@@ -256,9 +255,9 @@ GPUKeyValue* GetAndSort(size_t num_file, InputFile* inputFiles_d,
 
   GPUSort(key_value_d, all_num_kv, sorted_size);
 
-  end_time = std::chrono::high_resolution_clock::now();
-  duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time -
-                                                                   start_time);
+  auto end_time = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
+      end_time - start_time);
 
   gpu_stats.gpu_all_micros += duration.count();
 

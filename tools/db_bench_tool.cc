@@ -2262,10 +2262,8 @@ class Stats {
           next_report_ += 10000;
         else if (next_report_ < 500000)
           next_report_ += 50000;
-        else if (next_report_ < 1000000)
-          next_report_ += 100000;
         else
-          next_report_ += 1000000;
+          next_report_ += 100000;
         fprintf(stderr, "... finished %" PRIu64 " ops%30s\n", done_, "");
       } else {
         uint64_t now = clock_->NowMicros();

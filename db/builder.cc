@@ -206,7 +206,7 @@ Status BuildTable(
         /*compaction=*/nullptr, compaction_filter.get(),
         /*shutting_down=*/nullptr, db_options.info_log, full_history_ts_low);
 
-    auto start_time = std::chrono::high_resolution_clock::now();
+//    auto start_time = std::chrono::high_resolution_clock::now();
 
     c_iter.SeekToFirst();
     for (; c_iter.Valid(); c_iter.Next()) {
@@ -364,11 +364,10 @@ Status BuildTable(
       blob_file_builder.reset();
     }
 
-    auto end_time = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-        end_time - start_time);
-
-    gpu_stats.flush_time += duration.count();
+//    auto end_time = std::chrono::high_resolution_clock::now();
+//    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
+//        end_time - start_time);
+//    gpu_stats.flush_time += duration.count();
 
     // TODO Also check the IO status when create the Iterator.
 
