@@ -14,13 +14,7 @@ GPUCompactionStats::GPUCompactionStats()
     : gpu_total_input_bytes(0),
       gpu_total_output_bytes(0),
       gpu_all_micros(0),
-      gpu_compaction_count(0),
-//      compaction_time(0),
-//      compaction_io_time(0),
-//      flush_time(0),
-//      flush_io_time(0),
-//      transmission_and_malloc_time(0),
-      gpu_total_sort_time(0) {}
+      gpu_compaction_count(0) {}
 
 void GPUCompactionStats::PrintStats() const {
   std::cout << "-------------Stats-------------" << std::endl;
@@ -114,10 +108,10 @@ void GPUCompactionStats::ResetStats() {
   gpu_all_micros = 0;
   gpu_compaction_count = 0;
 
-//  flush_time = 0;
-//  flush_io_time = 0;
+  //  flush_time = 0;
+  //  flush_io_time = 0;
   compaction_time = 0;
-//  compaction_io_time = 0;
+  //  compaction_io_time = 0;
 }
 
 void GPUCompactionStats::OpenCuFileDriver() { cuFileDriverOpen(); }
