@@ -108,10 +108,10 @@ void GPUCompactionStats::ResetStats() {
   gpu_all_micros = 0;
   gpu_compaction_count = 0;
 
-  //  flush_time = 0;
-  //  flush_io_time = 0;
   compaction_time = 0;
-  //  compaction_io_time = 0;
+//  compaction_io_time = 0;
+//  flush_time = 0;
+//  flush_io_time = 0;
 }
 
 void GPUCompactionStats::OpenCuFileDriver() { cuFileDriverOpen(); }

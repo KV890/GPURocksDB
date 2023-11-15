@@ -28,14 +28,13 @@ class GPUCompactionStats {
   uint64_t gpu_all_micros;
   uint64_t gpu_compaction_count;
 
-  uint64_t compaction_time;
-//  std::atomic_uint64_t compaction_io_time;
-//  uint64_t flush_time;
-//  uint64_t flush_io_time;
+  uint64_t compaction_time = 0;
+//  std::atomic_uint64_t compaction_io_time = 0;
+//  uint64_t flush_time = 0;
+//  uint64_t flush_io_time = 0;
 
-//  uint64_t transmission_and_malloc_time;
-
-//  uint64_t gpu_total_sort_time;
+//  uint64_t transmission_and_malloc_time = 0;
+//  uint64_t gpu_total_sort_time = 0;
 };
 
 extern GPUCompactionStats gpu_stats;
