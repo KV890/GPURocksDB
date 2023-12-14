@@ -2494,11 +2494,7 @@ Status CompactionJob::GPUCompaction(const Compaction* compact) {
 
 //  printf("Compaction time: %lu us\n", compaction_stats_.stats.micros);
 
-  gpu_stats.gpu_total_input_bytes += gpu_input_bytes;
-  gpu_stats.gpu_compaction_count++;
-
   for (const auto& info : infos) {
-    gpu_stats.gpu_total_output_bytes += info.file_size;
     compaction_stats_.stats.bytes_written += info.file_size;
   }
 
