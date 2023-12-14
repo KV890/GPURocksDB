@@ -408,7 +408,7 @@ DEFINE_double(read_random_exp_range, 0.0,
               "The larger the number is, the more skewed the reads are. "
               "Only used in readrandom and multireadrandom benchmarks.");
 
-DEFINE_bool(histogram, true, "Print histogram of operation timings");
+DEFINE_bool(histogram, false, "Print histogram of operation timings");
 
 DEFINE_bool(confidence_interval_only, false,
             "Print 95% confidence interval upper and lower bounds only for "

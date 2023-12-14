@@ -10,11 +10,7 @@ namespace ROCKSDB_NAMESPACE {
 
 GPUCompactionStats gpu_stats;
 
-GPUCompactionStats::GPUCompactionStats()
-    : gpu_total_input_bytes(0),
-      gpu_total_output_bytes(0),
-      gpu_all_micros(0),
-      gpu_compaction_count(0) {}
+GPUCompactionStats::GPUCompactionStats() {}
 
 void GPUCompactionStats::PrintStats() const {
   std::cout << "-------------Stats-------------" << std::endl;
@@ -29,14 +25,14 @@ void GPUCompactionStats::PrintStats() const {
             << static_cast<double>(
                    static_cast<double>(compaction_time - compaction_io_time) /
                    1000000)
-            << " sec" << std::endl;
+            << " sec" << std::endl;*/
 
-  std::cout << "Compaction I/O时间: " << compaction_io_time << " us, "
+  /*std::cout << "Compaction I/O时间: " << compaction_io_time << " us, "
             << static_cast<double>(static_cast<double>(compaction_io_time) /
                                    1000000)
-            << " sec" << std::endl;
+            << " sec" << std::endl;*/
 
-  std::cout << "Flush时间: " << flush_time << " us, "
+  /*std::cout << "Flush时间: " << flush_time << " us, "
             << static_cast<double>(static_cast<double>(flush_time) / 1000000)
             << " sec" << std::endl;
 
@@ -71,7 +67,7 @@ void GPUCompactionStats::PrintStats() const {
                    static_cast<double>(compaction_io_time + flush_io_time))
             << std::endl;*/
 
-  std::cout << "GPU Compaction次数: " << gpu_compaction_count << std::endl;
+  /*std::cout << "GPU Compaction次数: " << gpu_compaction_count << std::endl;
 
   std::cout << "GPU Compaction总时间: " << gpu_all_micros << " us, "
             << static_cast<double>(static_cast<double>(gpu_all_micros) /
@@ -95,7 +91,12 @@ void GPUCompactionStats::PrintStats() const {
                         static_cast<double>(gpu_total_output_bytes)) /
                        (1024 * 1024)) /
                    (static_cast<double>(gpu_all_micros) / 1000000.0))
-            << " MB/s" << std::endl;
+            << " MB/s" << std::endl;*/
+
+  std::cout << "GPU Sort time: " << gpu_total_sort_time << " us, "
+            << static_cast<double>(static_cast<double>(gpu_total_sort_time) /
+                                   1000000.0)
+            << " sec" << std::endl;
 
   std::cout << "============================" << std::endl;
 }
@@ -103,15 +104,10 @@ void GPUCompactionStats::PrintStats() const {
 void GPUCompactionStats::ResetStats() {
   compaction_time = 0;
 
-  gpu_total_input_bytes = 0;
-  gpu_total_output_bytes = 0;
-  gpu_all_micros = 0;
-  gpu_compaction_count = 0;
-
-  compaction_time = 0;
-//  compaction_io_time = 0;
-//  flush_time = 0;
-//  flush_io_time = 0;
+  //  gpu_total_input_bytes = 0;
+  //  gpu_total_output_bytes = 0;
+  //  gpu_all_micros = 0;
+  //  gpu_compaction_count = 0;
 }
 
 void GPUCompactionStats::OpenCuFileDriver() { cuFileDriverOpen(); }
