@@ -27,10 +27,10 @@ void GPUCompactionStats::PrintStats() const {
                    1000000)
             << " sec" << std::endl;*/
 
-  /*std::cout << "Compaction I/O时间: " << compaction_io_time << " us, "
-            << static_cast<double>(static_cast<double>(compaction_io_time) /
-                                   1000000)
-            << " sec" << std::endl;*/
+//  std::cout << "Compaction I/O时间: " << compaction_io_time << " us, "
+//            << static_cast<double>(static_cast<double>(compaction_io_time) /
+//                                   1000000)
+//            << " sec" << std::endl;
 
   /*std::cout << "Flush时间: " << flush_time << " us, "
             << static_cast<double>(static_cast<double>(flush_time) / 1000000)
@@ -97,6 +97,14 @@ void GPUCompactionStats::PrintStats() const {
             << static_cast<double>(static_cast<double>(gpu_total_sort_time) /
                                    1000000.0)
             << " sec" << std::endl;
+
+  /*std::cout << "GPU Sort time: " << decode_time << " us, "
+            << static_cast<double>(static_cast<double>(decode_time) / 1000000.0)
+            << " sec" << std::endl;
+
+  std::cout << "GPU Sort time: " << encode_time << " us, "
+            << static_cast<double>(static_cast<double>(encode_time) / 1000000.0)
+            << " sec" << std::endl;*/
 
   std::cout << "============================" << std::endl;
 }

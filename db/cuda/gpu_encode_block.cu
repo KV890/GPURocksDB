@@ -1372,7 +1372,7 @@ void BuildSSTables(
   //      end_time - start_time);
   //  gpu_stats.transmission_and_malloc_time += duration.count();
 
-//  auto start_time = std::chrono::high_resolution_clock::now();
+  //  auto start_time = std::chrono::high_resolution_clock::now();
 
   // 构建所有文件的数据块
   BuildDataBlocks(&all_files_buffer_d, key_values_d, input_files_d,
@@ -1397,10 +1397,11 @@ void BuildSSTables(
     CHECK(cudaStreamSynchronize(stream[i]));
   }
 
-//  auto end_time = std::chrono::high_resolution_clock::now();
-//  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-//      end_time - start_time);
-//  gpu_stats.gpu_all_micros += duration.count();
+  //  auto end_time = std::chrono::high_resolution_clock::now();
+  //  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
+  //      end_time - start_time);
+  //  gpu_stats.gpu_all_micros += duration.count();
+  //  gpu_stats.encode_time += duration.count();
 
   // 编码其他块，并写SSTable
   // 方法1
@@ -1459,7 +1460,7 @@ void BuildSSTables(
   }*/
 
   // 方法3
-//  start_time = std::chrono::high_resolution_clock::now();
+//  auto start_time = std::chrono::high_resolution_clock::now();
 
   const size_t num_threads = 3;
   std::vector<std::thread> thread_pool;
@@ -1512,11 +1513,6 @@ void BuildSSTables(
   WriteSSTable(current_file_buffer, file_writes[num_outputs - 1]->file_name(),
                infos[num_outputs - 1].file_size);
 
-//  end_time = std::chrono::high_resolution_clock::now();
-//  duration = std::chrono::duration_cast<std::chrono::microseconds>(
-//      end_time - start_time);
-//  gpu_stats.compaction_io_time += duration.count();
-
   // 释放资源
   cudaFree(index_keys_d);
   cudaFree(restarts_last_data_block_last_file_d);
@@ -1530,6 +1526,11 @@ void BuildSSTables(
   for (auto& thread : thread_pool) {
     thread.join();
   }
+
+//  auto end_time = std::chrono::high_resolution_clock::now();
+//  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
+//      end_time - start_time);
+//  gpu_stats.compaction_io_time += duration.count();
 
   cudaFree(all_files_buffer_d);
 }
