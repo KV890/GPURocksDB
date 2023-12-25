@@ -236,8 +236,6 @@ GPUKeyValue* GetAndSort(size_t num_file, InputFile* inputFiles_d,
   dim3 block(num_file);
   dim3 grid(max_num_data_block);
 
-//  auto start_time = std::chrono::high_resolution_clock::now();
-
   DecodeFootersKernel<<<1, block, 0, stream[0]>>>(inputFiles_d, footers_d);
 
   ComputeRestartsKernel<<<grid, block, 0, stream[0]>>>(
@@ -253,19 +251,14 @@ GPUKeyValue* GetAndSort(size_t num_file, InputFile* inputFiles_d,
 
   CHECK(cudaStreamSynchronize(stream[0]));
 
-//  auto end_time = std::chrono::high_resolution_clock::now();
-//  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-//      end_time - start_time);
-//  gpu_stats.decode_time += duration.count();
-
-  auto start_time = std::chrono::high_resolution_clock::now();
+//  auto start_time = std::chrono::high_resolution_clock::now();
 
   GPUSort(key_value_d, all_num_kv, sorted_size);
 
-  auto end_time = std::chrono::high_resolution_clock::now();
-  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-      end_time - start_time);
-  gpu_stats.gpu_total_sort_time += duration.count();
+//  auto end_time = std::chrono::high_resolution_clock::now();
+//  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
+//      end_time - start_time);
+//  gpu_stats.gpu_total_sort_time += duration.count();
 
   // 释放资源
   cudaFree(all_restarts_d);
