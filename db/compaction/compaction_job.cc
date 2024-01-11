@@ -2406,6 +2406,8 @@ Status CompactionJob::GPUCompaction(const Compaction* compact) {
     num_inputs += compact->inputs(i)->size();
   }
 
+//  size_t gpu_input_bytes = 0;
+
   // 确定每个数据块的KV对数量 num_kv_data_block
   size_t num_kv_data_block = ComputeNumKVDataBlock();
 
@@ -2420,7 +2422,7 @@ Status CompactionJob::GPUCompaction(const Compaction* compact) {
   for (size_t i = 0; i < num_input_level; ++i) {
     auto* inputs = compact->inputs(i);
     for (size_t j = 0; j < inputs->size(); ++j) {
-      gpu_input_bytes += inputs->at(j)->fd.file_size;
+//      gpu_input_bytes += inputs->at(j)->fd.file_size;
       AddInputFile(compact_->compaction->level(i),
                    GetTableFileName(inputs->at(j)->fd.GetNumber()),
                    inputs->at(j), &input_files_d[last_size * i + j]);
