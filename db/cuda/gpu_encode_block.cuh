@@ -178,6 +178,7 @@
 #include <cuda_runtime.h>
 #include <driver_types.h>
 #include <fcntl.h>
+#include <unistd.h>
 
 #include <csignal>
 #include <cstdlib>
