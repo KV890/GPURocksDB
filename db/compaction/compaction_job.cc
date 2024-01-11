@@ -2406,8 +2406,6 @@ Status CompactionJob::GPUCompaction(const Compaction* compact) {
     num_inputs += compact->inputs(i)->size();
   }
 
-  size_t gpu_input_bytes = 0;
-
   // 确定每个数据块的KV对数量 num_kv_data_block
   size_t num_kv_data_block = ComputeNumKVDataBlock();
 
