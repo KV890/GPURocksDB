@@ -299,7 +299,7 @@ DEFINE_int32(duration, 0,
 DEFINE_string(value_size_distribution_type, "fixed",
               "Value size distribution type: fixed, uniform, normal");
 
-DEFINE_int32(value_size, 100, "Size of each value in fixed distribution");
+DEFINE_int32(value_size, 1024, "Size of each value in fixed distribution");
 static unsigned int value_size = 100;
 
 DEFINE_int32(value_size_min, 100, "Min size of random value");
@@ -323,7 +323,7 @@ DEFINE_int64(max_scan_distance, 0,
 
 DEFINE_bool(use_uint64_comparator, false, "use Uint64 user comparator");
 
-DEFINE_int64(batch_size, 1, "Batch size");
+DEFINE_int64(batch_size, 1000, "Batch size");
 
 static bool ValidateKeySize(const char* /*flagname*/, int32_t /*value*/) {
   return true;

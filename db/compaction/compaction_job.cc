@@ -2416,7 +2416,7 @@ Status CompactionJob::GPUCompaction(const Compaction* compact) {
 
   MallocInputFiles(&input_files_d, num_inputs);
 
-//  auto start_time = std::chrono::high_resolution_clock::now();
+  auto start_time = std::chrono::high_resolution_clock::now();
 
   size_t last_size = 0;
   for (size_t i = 0; i < num_input_level; ++i) {
@@ -2430,10 +2430,10 @@ Status CompactionJob::GPUCompaction(const Compaction* compact) {
     last_size = inputs->size();
   }
 
-//  auto end_time = std::chrono::high_resolution_clock::now();
-//  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-//      end_time - start_time);
-//  gpu_stats.compaction_io_time += duration.count();
+  auto end_time = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
+      end_time - start_time);
+  gpu_stats.compaction_io_time += duration.count();
 
   cudaStream_t stream[8];
   CreateStream(stream, 8);

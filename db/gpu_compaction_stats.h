@@ -29,7 +29,7 @@ class GPUCompactionStats {
 //  uint64_t gpu_compaction_count = 0;
 
   uint64_t compaction_time = 0;
-//  std::atomic_uint64_t compaction_io_time = 0;
+  std::atomic_uint64_t compaction_io_time = 0;
 //  uint64_t flush_time = 0;
 //  uint64_t flush_io_time = 0;
 
