@@ -998,8 +998,7 @@ Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
   UpdateCompactionJobStats(stats);
 
   auto stream = event_logger_->LogToBuffer(log_buffer_, 8192);
-  stream << "job" << job_id_ << "event"
-         << "compaction_finished"
+  stream << "job" << job_id_ << "event" << "compaction_finished"
          << "compaction_time_micros" << stats.micros
          << "compaction_time_cpu_micros" << stats.cpu_micros << "output_level"
          << compact_->compaction->output_level() << "num_output_files"
@@ -2083,8 +2082,7 @@ void CompactionJob::LogCompaction() {
                    cfd->GetName().c_str(), scratch);
     // build event logger report
     auto stream = event_logger_->Log();
-    stream << "job" << job_id_ << "event"
-           << "compaction_started"
+    stream << "job" << job_id_ << "event" << "compaction_started"
            << "compaction_reason"
            << GetCompactionReasonString(compaction->compaction_reason());
     for (size_t i = 0; i < compaction->num_input_levels(); ++i) {
@@ -2372,7 +2370,7 @@ Status CompactionJob::MyFinishCompactionOutputFile(
       file_checksum_func_name);
 
   auto sfm =
-      dynamic_cast<SstFileManagerImpl*>(db_options_.sst_file_manager.get());
+      static_cast<SstFileManagerImpl*>(db_options_.sst_file_manager.get());
   if (sfm && meta->fd.GetPathId() == 0) {
     Status add_s = sfm->OnAddFile(fname);
     if (!add_s.ok()) {
@@ -2440,7 +2438,6 @@ Status CompactionJob::GPUCompaction(const Compaction* compact) {
 
   // 解码和排序
   size_t sorted_size;
-
   GPUKeyValue* result_d = DecodeAndSort(num_inputs, input_files_d,
                                         num_kv_data_block, sorted_size, stream);
 
@@ -2492,7 +2489,7 @@ Status CompactionJob::GPUCompaction(const Compaction* compact) {
   gpu_stats.compaction_time += compaction_stats_.stats.micros;
   compaction_stats_.AddCpuMicros(compaction_stats_.stats.micros);
 
-//  printf("Compaction time: %lu us\n", compaction_stats_.stats.micros);
+  //  printf("Compaction time: %lu us\n", compaction_stats_.stats.micros);
 
   for (const auto& info : infos) {
     compaction_stats_.stats.bytes_written += info.file_size;

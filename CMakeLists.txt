@@ -1629,6 +1629,9 @@ if (WITH_BENCHMARK)
     add_subdirectory(${PROJECT_SOURCE_DIR}/microbench/)
 endif ()
 
+set(CMAKE_BUILD_TYPE Release)
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -O3 -use_fast_math -lineinfo")
+
 find_package(CUDA REQUIRED)
 include_directories(${CUDA_INCLUDE_DIRS})
 
